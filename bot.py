@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 import asyncio
+import base64
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import Conflict
@@ -93,6 +94,59 @@ El JSON debe tener exactamente estas claves:
                 "messages": [
                     {"role": "system", "content": "Eres un asistente que extrae datos de gastos y responde solo con JSON válido."},
                     {"role": "user", "content": prompt},
+                ],
+            },
+        )
+        resp.raise_for_status()
+        raw = resp.json()["choices"][0]["message"]["content"]
+        return json.loads(raw.replace("```json", "").replace("```", "").strip())
+
+
+async def extraer_gasto_desde_imagen(imagen_bytes: bytes, nombre_usuario: str) -> dict:
+    """Usa GPT-4o vision para extraer datos de una foto de boleta."""
+    hoy = datetime.now().strftime("%d/%m/%Y")
+    mes_actual = datetime.now().strftime("%m/%Y")
+    imagen_b64 = base64.b64encode(imagen_bytes).decode("utf-8")
+
+    prompt = f"""Analiza esta foto de una boleta/ticket/recibo y extrae la información del gasto.
+Responde SOLO con JSON válido, sin texto extra, sin bloques de código.
+
+Quien tomó la foto (asume que pagó): {nombre_usuario}
+Fecha de hoy: {hoy}
+Mes actual: {mes_actual}
+
+El JSON debe tener exactamente estas claves:
+- descripcion: string (nombre del comercio o tipo de gasto, máx 60 chars)
+- monto: number (monto TOTAL en pesos chilenos; busca "TOTAL", "Total a pagar", "Total $"; si ves dólares multiplica por 950)
+- categoria: una de [comida, transporte, hogar, salud, ocio, mascota, otro]
+- fecha: string DD/MM/YYYY (léela de la boleta; si no se ve claramente usa hoy)
+- cuotas: integer (1 — asume al contado a menos que la boleta diga cuotas)
+- fecha_primera_cuota: string MM/YYYY (usa el mes actual por defecto)
+- entre_quienes: array con ["{nombre_usuario}"] (solo quien registra; puede ajustarse después)
+- pagado_por: string ("{nombre_usuario}")
+- mi_parte: number (igual al monto total, ya que asumimos pago individual)
+- notas: string (si ves items relevantes en la boleta menciónalos brevemente, si no cadena vacía)
+- confianza: string ("alta", "media", "baja") — qué tan legible estaba la boleta"""
+
+    async with httpx.AsyncClient(timeout=45) as client:
+        resp = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": "gpt-4o",
+                "max_tokens": 600,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {
+                                "url": f"data:image/jpeg;base64,{imagen_b64}",
+                                "detail": "low"
+                            }},
+                        ],
+                    }
                 ],
             },
         )
@@ -336,6 +390,51 @@ async def manejar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ Error: {str(e)[:100]}")
 
 
+async def manejar_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe una foto de boleta y extrae el gasto con GPT-4o vision."""
+    if not usuario_autorizado(update):
+        await update.message.reply_text("⛔ No estás autorizado.")
+        return
+
+    msg = await update.message.reply_text("📸 Analizando boleta...")
+    username = update.effective_user.first_name or update.effective_user.username or "Usuario"
+
+    try:
+        # Tomar la foto de mayor resolución disponible
+        foto    = update.message.photo[-1]
+        file    = await context.bot.get_file(foto.file_id)
+        img_bytes = await file.download_as_bytearray()
+
+        await msg.edit_text("🤖 Extrayendo datos de la boleta...")
+
+        gasto = await extraer_gasto_desde_imagen(bytes(img_bytes), username)
+        gasto["_texto_original"] = f"[foto de boleta]"
+
+        # Avisar si la confianza fue baja
+        confianza = gasto.pop("confianza", "alta")
+        if confianza == "baja":
+            await update.message.reply_text(
+                "⚠️ La boleta no era muy legible. Revisa el monto antes de confirmar."
+            )
+
+        gastos_pendientes[update.effective_chat.id] = gasto
+        teclado = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Confirmar", callback_data="confirmar"),
+            InlineKeyboardButton("❌ Cancelar",  callback_data="cancelar"),
+        ]])
+        await msg.edit_text(
+            formatear_preview(gasto, username),
+            parse_mode="Markdown",
+            reply_markup=teclado,
+        )
+
+    except json.JSONDecodeError:
+        await msg.edit_text("❌ No pude leer la boleta. Intenta con mejor iluminación o manda un audio.")
+    except Exception as e:
+        logger.error(f"Error foto: {e}", exc_info=True)
+        await msg.edit_text(f"❌ Error al procesar la foto: {str(e)[:100]}")
+
+
 async def manejar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not usuario_autorizado(update):
         return
@@ -366,6 +465,7 @@ def construir_app():
     app.add_handler(CommandHandler("eliminar", cmd_eliminar))
     app.add_handler(CallbackQueryHandler(manejar_callback))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, manejar_audio))
+    app.add_handler(MessageHandler(filters.PHOTO, manejar_foto))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, manejar_texto))
     app.add_error_handler(error_handler)
     return app
