@@ -107,8 +107,10 @@
   td { padding:10px 12px; border-bottom:1px solid var(--border); }
   tr:last-child td { border-bottom:none; }
   tr:hover td { background:var(--bg); }
-  .btn-del { background:none; border:none; cursor:pointer; color:var(--muted); font-size:16px; padding:2px 6px; border-radius:4px; }
-  .btn-del:hover { color:var(--danger); background:#FCEBEB; }
+  .btn-del  { background:none; border:none; cursor:pointer; color:var(--muted); font-size:16px; padding:2px 6px; border-radius:4px; }
+  .btn-del:hover  { color:var(--danger); background:#FCEBEB; }
+  .btn-edit { background:none; border:none; cursor:pointer; color:var(--muted); font-size:16px; padding:2px 6px; border-radius:4px; }
+  .btn-edit:hover { color:#185FA5; background:#E6F1FB; }
 
   .badge { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:500; }
   .badge-comida     { background:#EAF3DE; color:#3B6D11; }
@@ -202,6 +204,43 @@
         <h3>Pagos saldados <span id="pagos-count-label" style="font-weight:400;color:var(--muted)"></span></h3>
       </div>
       <div id="detalle-pagos-container"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal editar gasto -->
+<div class="modal-overlay" id="modal-editar">
+  <div class="modal">
+    <h3>✏️ Editar gasto</h3>
+    <input type="hidden" id="editar-id"/>
+    <label>Descripción</label>
+    <input id="editar-desc" type="text" maxlength="60"/>
+    <label>Monto total</label>
+    <input id="editar-monto" type="number"/>
+    <label>Categoría</label>
+    <select id="editar-cat" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px">
+      <option value="comida">Comida</option>
+      <option value="transporte">Transporte</option>
+      <option value="hogar">Hogar</option>
+      <option value="salud">Salud</option>
+      <option value="ocio">Ocio</option>
+      <option value="mascota">Mascota</option>
+      <option value="otro">Otro</option>
+    </select>
+    <label>Pagó</label>
+    <select id="editar-pagador" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px">
+      <option value="Javier">Javier</option>
+      <option value="Romina">Romina</option>
+    </select>
+    <label>Fecha</label>
+    <input id="editar-fecha" type="date"/>
+    <label>Cuotas</label>
+    <input id="editar-cuotas" type="number" min="1" max="72"/>
+    <label>Notas</label>
+    <input id="editar-notas" type="text"/>
+    <div class="modal-actions">
+      <button class="btn" onclick="cerrarModalEditar()">Cancelar</button>
+      <button class="btn btn-accent" onclick="guardarEdicion()">Guardar cambios</button>
     </div>
   </div>
 </div>
@@ -571,7 +610,10 @@ function renderTabla(gastos) {
       <td style="font-weight:500">${fmt(g.monto)}</td>
       <td style="color:var(--muted);font-size:12px">${pagador}</td>
       <td style="color:var(--muted);font-size:12px">${personas}</td>
-      <td><button class="btn-del" onclick="eliminarGasto(${g.id},this)" title="Eliminar">🗑</button></td>
+      <td style="white-space:nowrap">
+        <button class="btn-edit" onclick="abrirModalEditar(${g.id})" title="Editar">✏️</button>
+        <button class="btn-del"  onclick="eliminarGasto(${g.id},this)" title="Eliminar">🗑</button>
+      </td>
     </tr>`;
   }).join("");
 
@@ -606,6 +648,63 @@ function renderTabla(gastos) {
     detallePagosCard.style.display = "none";
   }
 }
+
+// ── Editar gasto ─────────────────────────────────────────────────────────────
+function abrirModalEditar(id) {
+  const g = todosLosGastos.find(x => x.id === id);
+  if (!g) return;
+  document.getElementById("editar-id").value     = g.id;
+  document.getElementById("editar-desc").value   = g.descripcion;
+  document.getElementById("editar-monto").value  = g.monto;
+  document.getElementById("editar-cat").value    = g.categoria;
+  document.getElementById("editar-pagador").value= normalizar(g.pagado_por || g.registrado_por);
+  document.getElementById("editar-fecha").value  = g.fecha;
+  document.getElementById("editar-cuotas").value = g.cuotas || 1;
+  document.getElementById("editar-notas").value  = g.notas || "";
+  document.getElementById("modal-editar").classList.add("open");
+}
+
+function cerrarModalEditar() {
+  document.getElementById("modal-editar").classList.remove("open");
+}
+
+async function guardarEdicion() {
+  const id     = parseInt(document.getElementById("editar-id").value);
+  const monto  = parseFloat(document.getElementById("editar-monto").value);
+  const cuotas = parseInt(document.getElementById("editar-cuotas").value) || 1;
+
+  if (!monto || monto <= 0) { alert("Monto inválido"); return; }
+
+  const patch = {
+    descripcion: document.getElementById("editar-desc").value.trim(),
+    monto,
+    categoria:   document.getElementById("editar-cat").value,
+    pagado_por:  document.getElementById("editar-pagador").value,
+    fecha:       document.getElementById("editar-fecha").value,
+    cuotas,
+    mi_parte:    monto / 2,
+    notas:       document.getElementById("editar-notas").value.trim(),
+  };
+
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/gastos?id=eq.${id}`, {
+    method: "PATCH",
+    headers: {
+      "apikey":       SUPABASE_ANON_KEY,
+      "Authorization":`Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer":       "return=minimal",
+    },
+    body: JSON.stringify(patch),
+  });
+
+  if (r.ok) { cerrarModalEditar(); cargarDatos(); }
+  else alert("Error al guardar: " + await r.text());
+}
+
+// Cerrar al click fuera
+document.getElementById("modal-editar").addEventListener("click", e => {
+  if (e.target === e.currentTarget) cerrarModalEditar();
+});
 
 // ── Exportar Excel ────────────────────────────────────────────────────────────
 function exportarExcel() {
