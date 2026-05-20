@@ -190,12 +190,18 @@
 
   <!-- ── DETALLE ── -->
   <div id="page-detalle" class="page">
-    <div class="table-card">
+    <div class="table-card" style="margin-bottom:1.5rem">
       <div class="table-card-header">
-        <h3>Todos los gastos <span id="count-label" style="font-weight:400;color:var(--muted)"></span></h3>
+        <h3>Gastos <span id="count-label" style="font-weight:400;color:var(--muted)"></span></h3>
         <button class="btn btn-green" onclick="exportarExcel()">⬇ Exportar Excel</button>
       </div>
       <div id="tabla-container"><div class="loading">Cargando...</div></div>
+    </div>
+    <div class="table-card" id="detalle-pagos-card" style="display:none">
+      <div class="table-card-header">
+        <h3>Pagos saldados <span id="pagos-count-label" style="font-weight:400;color:var(--muted)"></span></h3>
+      </div>
+      <div id="detalle-pagos-container"></div>
     </div>
   </div>
 </div>
@@ -573,41 +579,71 @@ function renderTabla(gastos) {
     <thead><tr><th>Fecha</th><th>Descripción</th><th>Cat.</th><th>Monto</th><th>Pagó</th><th>Entre quiénes</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
+
+  // Tabla de pagos en Detalle
+  const detallePagosCard = document.getElementById("detalle-pagos-card");
+  const detallePagosCont = document.getElementById("detalle-pagos-container");
+  if (todosPagos && todosPagos.length) {
+    detallePagosCard.style.display = "block";
+    document.getElementById("pagos-count-label").textContent = `(${todosPagos.length})`;
+    const pagoRows = todosPagos.map(p => {
+      const fecha = new Date(p.fecha+"T12:00:00").toLocaleDateString("es-CL");
+      return `<tr>
+        <td>${fecha}</td>
+        <td style="font-weight:500">${normalizar(p.de)}</td>
+        <td style="color:var(--muted)">→ pagó a →</td>
+        <td style="font-weight:500">${normalizar(p.para)}</td>
+        <td style="font-weight:600;color:var(--accent)">${fmt(p.monto)}</td>
+        <td style="color:var(--muted);font-size:12px">${p.notas||""}</td>
+        <td><button class="btn-del" onclick="eliminarPago(${p.id})" title="Eliminar">🗑</button></td>
+      </tr>`;
+    }).join("");
+    detallePagosCont.innerHTML = `<div style="overflow-x:auto"><table>
+      <thead><tr><th>Fecha</th><th>De</th><th></th><th>Para</th><th>Monto</th><th>Notas</th><th></th></tr></thead>
+      <tbody>${pagoRows}</tbody>
+    </table></div>`;
+  } else {
+    detallePagosCard.style.display = "none";
+  }
 }
 
 // ── Exportar Excel ────────────────────────────────────────────────────────────
 function exportarExcel() {
   const gastos = filtrar(todosLosGastos);
-  if (!gastos.length) { alert("No hay gastos para exportar"); return; }
+  if (!gastos.length && !todosPagos.length) { alert("No hay datos para exportar"); return; }
 
-  const data = gastos.map(g => ({
-    "Fecha":        g.fecha,
-    "Descripción":  g.descripcion,
-    "Categoría":    g.categoria,
-    "Monto":        g.monto,
-    "Cuotas":       g.cuotas || 1,
-    "Pagó":         normalizar(g.pagado_por || g.registrado_por),
-    "Entre quiénes":Array.isArray(g.entre_quienes) ? g.entre_quienes.map(normalizar).join(", ") : "",
-    "Mi parte":     g.mi_parte,
-    "Notas":        g.notas || "",
-  }));
-
-  // Agregar hoja de pagos si hay
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(data);
-  ws["!cols"] = [10,30,14,12,8,12,20,12,20].map(w=>({wch:w}));
-  XLSX.utils.book_append_sheet(wb, ws, "Gastos");
 
+  // Hoja 1: Gastos
+  if (gastos.length) {
+    const data = gastos.map(g => ({
+      "Fecha":        g.fecha,
+      "Descripción":  g.descripcion,
+      "Categoría":    g.categoria,
+      "Monto":        g.monto,
+      "Cuotas":       g.cuotas || 1,
+      "Pagó":         normalizar(g.pagado_por || g.registrado_por),
+      "Entre quiénes":Array.isArray(g.entre_quienes) ? g.entre_quienes.map(normalizar).join(", ") : "",
+      "Mi parte":     g.mi_parte,
+      "Notas":        g.notas || "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws["!cols"] = [12,30,14,12,8,12,22,12,22].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb, ws, "Gastos");
+  }
+
+  // Hoja 2: Pagos saldados
   if (todosPagos.length) {
     const dataPagos = todosPagos.map(p => ({
-      "Fecha": p.fecha,
-      "De":    normalizar(p.de),
-      "Para":  normalizar(p.para),
-      "Monto": p.monto,
-      "Notas": p.notas || "",
+      "Fecha":       p.fecha,
+      "De":          normalizar(p.de),
+      "Para":        normalizar(p.para),
+      "Monto":       p.monto,
+      "Notas":       p.notas || "",
     }));
     const wsPagos = XLSX.utils.json_to_sheet(dataPagos);
-    XLSX.utils.book_append_sheet(wb, wsPagos, "Pagos");
+    wsPagos["!cols"] = [12,14,14,12,25].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb, wsPagos, "Pagos saldados");
   }
 
   const mes = document.getElementById("filter-mes").value || "todos";
