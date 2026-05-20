@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Gastos Javier & Romina</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg:      #f5f4f0;
@@ -24,8 +25,14 @@
 
   header { background:var(--surface); border-bottom:1px solid var(--border); padding:1rem 1.5rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
   header h1 { font-size:18px; font-weight:600; }
-  .header-right { display:flex; align-items:center; gap:12px; }
+  .header-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   #last-update { font-size:12px; color:var(--muted); }
+  .btn { padding:7px 14px; border-radius:8px; font-size:13px; cursor:pointer; font-weight:500; border:1px solid var(--border); background:var(--surface); color:var(--text); }
+  .btn:hover { background:var(--bg); }
+  .btn-accent { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .btn-accent:hover { opacity:.88; }
+  .btn-green { background:#EAF3DE; color:#3B6D11; border-color:#C0DD97; }
+  .btn-green:hover { background:#C0DD97; }
 
   nav { display:flex; gap:2px; background:var(--bg); padding:1rem 1.5rem 0; }
   .tab { padding:8px 16px; font-size:13px; border-radius:8px 8px 0 0; cursor:pointer; border:1px solid transparent; border-bottom:none; color:var(--muted); }
@@ -33,9 +40,8 @@
 
   .container { max-width:960px; margin:0 auto; padding:1.5rem; }
 
-  .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:1.5rem; }
+  .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:1.5rem; align-items:center; }
   .filters select { font-size:13px; padding:7px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); }
-  .btn-refresh { padding:7px 14px; border-radius:8px; background:var(--accent); color:#fff; border:none; font-size:13px; cursor:pointer; font-weight:500; }
 
   .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:1.5rem; }
   .metric { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; }
@@ -43,18 +49,44 @@
   .metric .value { font-size:20px; font-weight:600; }
   .metric .sub   { font-size:11px; color:var(--muted); margin-top:3px; }
 
-  /* Deuda card */
+  /* Balance card */
   .deuda-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1.25rem; margin-bottom:1.5rem; }
   .deuda-card h3 { font-size:14px; font-weight:500; margin-bottom:1rem; }
-  .deuda-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); }
+  .deuda-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); gap:8px; }
   .deuda-row:last-child { border-bottom:none; }
   .deuda-persona { font-size:13px; }
   .deuda-monto { font-size:16px; font-weight:600; }
   .deuda-monto.debe { color:var(--danger); }
   .deuda-monto.ok   { color:var(--accent); }
-  .arrow { font-size:13px; color:var(--muted); }
+  .arrow { font-size:13px; color:var(--muted); flex:1; text-align:center; }
 
-  /* Proyección mensual */
+  /* Saldar modal */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal { background:var(--surface); border-radius:var(--radius); padding:1.5rem; width:320px; max-width:90vw; }
+  .modal h3 { font-size:16px; font-weight:500; margin-bottom:1rem; }
+  .modal label { font-size:12px; color:var(--muted); display:block; margin-bottom:4px; margin-top:12px; }
+  .modal input { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px; background:var(--surface); color:var(--text); }
+  .modal-actions { display:flex; gap:8px; margin-top:1.25rem; }
+  .modal-actions .btn { flex:1; text-align:center; }
+
+  /* Historial pagos */
+  .pagos-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1.25rem; margin-bottom:1.5rem; }
+  .pagos-card h3 { font-size:14px; font-weight:500; margin-bottom:1rem; }
+  .pago-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .pago-row:last-child { border-bottom:none; }
+  .pago-fecha { color:var(--muted); font-size:12px; min-width:80px; }
+  .pago-monto { font-weight:600; color:var(--accent); }
+  .btn-del-pago { background:none; border:none; cursor:pointer; color:var(--muted); font-size:14px; padding:2px 6px; border-radius:4px; }
+  .btn-del-pago:hover { color:var(--danger); }
+
+  /* Charts */
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:1.5rem; }
+  @media(max-width:600px) { .charts { grid-template-columns:1fr; } }
+  .chart-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; }
+  .chart-card h3 { font-size:14px; font-weight:500; margin-bottom:12px; }
+
+  /* Proyección */
   .proyeccion-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; margin-bottom:1.5rem; }
   .mes-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
   .mes-header { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
@@ -66,13 +98,10 @@
   .mes-cuotas { font-size:11px; color:var(--muted); margin-top:8px; border-top:1px solid var(--border); padding-top:8px; }
   .mes-cuota-item { display:flex; justify-content:space-between; padding:3px 0; font-size:12px; }
 
-  .charts { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:1.5rem; }
-  @media(max-width:600px) { .charts { grid-template-columns:1fr; } }
-  .chart-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; }
-  .chart-card h3 { font-size:14px; font-weight:500; margin-bottom:12px; }
-
+  /* Tabla */
   .table-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
-  .table-card h3 { font-size:14px; font-weight:500; padding:1rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
+  .table-card-header { display:flex; align-items:center; justify-content:space-between; padding:1rem; border-bottom:1px solid var(--border); }
+  .table-card-header h3 { font-size:14px; font-weight:500; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th { text-align:left; padding:8px 12px; color:var(--muted); font-weight:500; font-size:12px; border-bottom:1px solid var(--border); }
   td { padding:10px 12px; border-bottom:1px solid var(--border); }
@@ -102,7 +131,7 @@
   <h1>💰 Javier & Romina</h1>
   <div class="header-right">
     <span id="last-update"></span>
-    <button class="btn-refresh" onclick="cargarDatos()">↻ Actualizar</button>
+    <button class="btn" onclick="cargarDatos()">↻ Actualizar</button>
   </div>
 </header>
 
@@ -124,8 +153,8 @@
       <option value="hogar">Hogar</option>
       <option value="salud">Salud</option>
       <option value="ocio">Ocio</option>
-      <option value="otro">Otro</option>
       <option value="mascota">Mascota</option>
+      <option value="otro">Otro</option>
     </select>
   </div>
 
@@ -143,6 +172,11 @@
       <div id="deuda-container"><div class="loading">Calculando...</div></div>
     </div>
 
+    <div class="pagos-card" id="pagos-card" style="display:none">
+      <h3>💸 Pagos realizados</h3>
+      <div id="pagos-container"></div>
+    </div>
+
     <div class="charts">
       <div class="chart-card"><h3>Por categoría</h3><canvas id="chart-cat" height="200"></canvas></div>
       <div class="chart-card"><h3>Evolución mensual</h3><canvas id="chart-mes" height="200"></canvas></div>
@@ -157,8 +191,32 @@
   <!-- ── DETALLE ── -->
   <div id="page-detalle" class="page">
     <div class="table-card">
-      <h3>Todos los gastos <span id="count-label" style="font-weight:400;color:var(--muted)"></span></h3>
+      <div class="table-card-header">
+        <h3>Todos los gastos <span id="count-label" style="font-weight:400;color:var(--muted)"></span></h3>
+        <button class="btn btn-green" onclick="exportarExcel()">⬇ Exportar Excel</button>
+      </div>
       <div id="tabla-container"><div class="loading">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal saldar deuda -->
+<div class="modal-overlay" id="modal-saldar">
+  <div class="modal">
+    <h3>💸 Registrar pago</h3>
+    <label>De</label>
+    <input id="saldar-de" type="text" readonly/>
+    <label>Para</label>
+    <input id="saldar-para" type="text" readonly/>
+    <label>Monto</label>
+    <input id="saldar-monto" type="number" placeholder="Ej: 36500"/>
+    <label>Fecha</label>
+    <input id="saldar-fecha" type="date"/>
+    <label>Notas (opcional)</label>
+    <input id="saldar-notas" type="text" placeholder="Ej: transferencia mayo"/>
+    <div class="modal-actions">
+      <button class="btn" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-accent" onclick="confirmarPago()">Confirmar pago</button>
     </div>
   </div>
 </div>
@@ -168,38 +226,34 @@
 const SUPABASE_URL      = "https://oomcsihzyurypogwieqc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vbWNzaWh6eXVyeXBvZ3dpZXFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODQ3MzQsImV4cCI6MjA5NDg2MDczNH0.KLIL7qkRUeE52WKICQABZsnv409snJ0xSp-bmfhBjVc";
 
-// Nombres canónicos que se muestran en el dashboard
 const PERSONA_A = "Javier";
 const PERSONA_B = "Romina";
 
-// Apodos y variantes que se mapean a cada persona (en minúsculas)
 const ALIAS = {
-  [PERSONA_A]: ["javier", "javi", "mondi", "jmondionu", "j"],
-  [PERSONA_B]: ["romina", "romi", "rome", "ro"],
+  [PERSONA_A]: ["javier", "javi", "mondi", "jmondionu", "j", "monyi"],
+  [PERSONA_B]: ["romina", "romi", "rome", "ro", "yomi"],
 };
 
-// Devuelve el nombre canónico (PERSONA_A o PERSONA_B) dado cualquier variante,
-// o el nombre original si no se reconoce
 function normalizar(nombre) {
   if (!nombre) return nombre;
   const n = nombre.toLowerCase().trim();
   for (const [canonical, aliases] of Object.entries(ALIAS)) {
     if (aliases.includes(n)) return canonical;
   }
-  // Coincidencia parcial como fallback (ej: "Javier M." → Javier)
   for (const [canonical, aliases] of Object.entries(ALIAS)) {
     if (aliases.some(a => n.startsWith(a) || a.startsWith(n))) return canonical;
   }
-  // Capitaliza el nombre desconocido para mostrarlo consistentemente
   return nombre.charAt(0).toUpperCase() + nombre.slice(1);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
 let chartCat = null, chartMes = null;
 let todosLosGastos = [];
+let todosPagos = [];
 
-const fmt = n => "$" + Math.round(n).toLocaleString("es-CL");
+const fmt  = n => "$" + Math.round(n).toLocaleString("es-CL");
 const badge = c => `<span class="badge badge-${c}">${c[0].toUpperCase()+c.slice(1)}</span>`;
+const hoy   = () => new Date().toISOString().slice(0,10);
 
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t,i) => t.classList.toggle("active", ["resumen","proyeccion","detalle"][i]===name));
@@ -207,24 +261,87 @@ function showTab(name) {
   document.getElementById("page-"+name).classList.add("active");
 }
 
+// ── Fetch ─────────────────────────────────────────────────────────────────────
 async function fetchGastos() {
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/gastos?select=*&order=fecha.desc,created_at.desc&limit=1000`, {
-    headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}` }
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/gastos?select=*&order=fecha.desc,created_at.desc&limit=1000`, {
+    headers:{ "apikey":SUPABASE_ANON_KEY, "Authorization":`Bearer ${SUPABASE_ANON_KEY}` }
   });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  return resp.json();
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function fetchPagos() {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/pagos?select=*&order=fecha.desc,created_at.desc`, {
+    headers:{ "apikey":SUPABASE_ANON_KEY, "Authorization":`Bearer ${SUPABASE_ANON_KEY}` }
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
 }
 
 async function eliminarGasto(id, btn) {
   if (!confirm(`¿Eliminar gasto #${id}?`)) return;
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/gastos?id=eq.${id}`, {
-    method: "DELETE",
-    headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}` }
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/gastos?id=eq.${id}`, {
+    method:"DELETE",
+    headers:{ "apikey":SUPABASE_ANON_KEY, "Authorization":`Bearer ${SUPABASE_ANON_KEY}` }
   });
-  if (resp.ok) { btn.closest("tr").remove(); cargarDatos(); }
+  if (r.ok) cargarDatos();
   else alert("Error al eliminar");
 }
 
+async function eliminarPago(id) {
+  if (!confirm("¿Eliminar este pago?")) return;
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/pagos?id=eq.${id}`, {
+    method:"DELETE",
+    headers:{ "apikey":SUPABASE_ANON_KEY, "Authorization":`Bearer ${SUPABASE_ANON_KEY}` }
+  });
+  if (r.ok) cargarDatos();
+  else alert("Error al eliminar");
+}
+
+// ── Modal saldar ──────────────────────────────────────────────────────────────
+function abrirModalSaldar(de, para, monto) {
+  document.getElementById("saldar-de").value    = de;
+  document.getElementById("saldar-para").value  = para;
+  document.getElementById("saldar-monto").value = Math.round(monto);
+  document.getElementById("saldar-fecha").value = hoy();
+  document.getElementById("saldar-notas").value = "";
+  document.getElementById("modal-saldar").classList.add("open");
+}
+
+function cerrarModal() {
+  document.getElementById("modal-saldar").classList.remove("open");
+}
+
+async function confirmarPago() {
+  const de    = document.getElementById("saldar-de").value;
+  const para  = document.getElementById("saldar-para").value;
+  const monto = parseFloat(document.getElementById("saldar-monto").value);
+  const fecha = document.getElementById("saldar-fecha").value;
+  const notas = document.getElementById("saldar-notas").value;
+
+  if (!monto || monto <= 0) { alert("Ingresa un monto válido"); return; }
+
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/pagos`, {
+    method:"POST",
+    headers:{
+      "apikey":SUPABASE_ANON_KEY,
+      "Authorization":`Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type":"application/json",
+      "Prefer":"return=minimal"
+    },
+    body: JSON.stringify({ de, para, monto, fecha, notas })
+  });
+
+  if (r.ok) { cerrarModal(); cargarDatos(); }
+  else alert("Error al registrar pago: " + await r.text());
+}
+
+// Cerrar modal al hacer click fuera
+document.getElementById("modal-saldar").addEventListener("click", e => {
+  if (e.target === e.currentTarget) cerrarModal();
+});
+
+// ── Filtro ────────────────────────────────────────────────────────────────────
 function filtrar(gastos) {
   const mes = document.getElementById("filter-mes").value;
   const cat = document.getElementById("filter-cat").value;
@@ -234,88 +351,76 @@ function filtrar(gastos) {
   );
 }
 
-// ── Expansión de cuotas ───────────────────────────────────────────────────────
-// Dado un gasto con N cuotas que empieza en fecha X,
-// devuelve un array de {mes, monto_cuota, descripcion, pagado_por, entre_quienes}
+// ── Expansión cuotas ──────────────────────────────────────────────────────────
 function expandirCuotas(gastos) {
   const cuotas = [];
   gastos.forEach(g => {
-    const n      = g.cuotas || 1;
-    const base   = new Date(g.fecha + "T12:00:00");
-    const monto  = g.monto / n;
+    const n    = g.cuotas || 1;
+    const base = new Date((g.fecha_primera_cuota || g.fecha) + "T12:00:00");
+    const monto = g.monto / n;
     for (let i = 0; i < n; i++) {
       const d = new Date(base);
       d.setMonth(d.getMonth() + i);
-      const mes = d.toISOString().slice(0, 7);
       cuotas.push({
-        mes,
-        monto_cuota: monto,
-        descripcion: g.descripcion,
-        pagado_por:  normalizar(g.pagado_por || g.registrado_por),
-        entre_quienes: (g.entre_quienes || [g.registrado_por]).map(normalizar),
-        cuota_num: i + 1,
+        mes:          d.toISOString().slice(0,7),
+        monto_cuota:  monto,
+        descripcion:  g.descripcion,
+        pagado_por:   normalizar(g.pagado_por || g.registrado_por),
+        entre_quienes:(g.entre_quienes || [g.registrado_por]).map(normalizar),
+        cuota_num:    i + 1,
         cuotas_total: n,
-        id: g.id,
+        id:           g.id,
       });
     }
   });
   return cuotas;
 }
 
-// ── Balance ───────────────────────────────────────────────────────────────────
-// Para cada cuota pagada: quien pagó adelantó el total.
-// Cada participante debe su parte (monto/participantes).
-// Saldo = lo que pagaste - lo que deberías haber pagado.
-function calcularBalance(gastos) {
+// ── Balance (gastos + pagos) ───────────────────────────────────────────────────
+function calcularBalance(gastos, pagos) {
   const saldos = {};
-  const cuotas = expandirCuotas(gastos);
 
-  cuotas.forEach(c => {
-    const personas = c.entre_quienes;
-    const n        = personas.length || 1;
-    const pagador  = c.pagado_por;
-    const total    = c.monto_cuota;
-
-    personas.forEach(p => {
-      if (!saldos[p]) saldos[p] = 0;
-      saldos[p] -= total / n; // cada uno debe su parte
+  // Acumular desde gastos
+  expandirCuotas(gastos).forEach(c => {
+    const n      = c.entre_quienes.length || 1;
+    const pagador = c.pagado_por;
+    c.entre_quienes.forEach(p => {
+      saldos[p] = (saldos[p] || 0) - c.monto_cuota / n;
     });
-    if (!saldos[pagador]) saldos[pagador] = 0;
-    saldos[pagador] += total; // quien pagó recupera el total
+    saldos[pagador] = (saldos[pagador] || 0) + c.monto_cuota;
+  });
+
+  // Descontar pagos ya realizados
+  (pagos || []).forEach(p => {
+    const de   = normalizar(p.de);
+    const para = normalizar(p.para);
+    saldos[de]   = (saldos[de]   || 0) + p.monto; // quien pagó mejora su saldo
+    saldos[para] = (saldos[para] || 0) - p.monto; // quien recibió reduce su crédito
   });
 
   return saldos;
 }
 
-// ── Proyección mensual ────────────────────────────────────────────────────────
+// ── Proyección ────────────────────────────────────────────────────────────────
 function calcularProyeccion(gastos) {
-  const cuotas = expandirCuotas(gastos);
-  const meses  = {};
-
-  cuotas.forEach(c => {
-    if (!meses[c.mes]) meses[c.mes] = { total: 0, personas: {}, cuotas_pendientes: [] };
-    const m        = meses[c.mes];
-    const personas = c.entre_quienes;
-    const n        = personas.length || 1;
-
+  const meses = {};
+  expandirCuotas(gastos).forEach(c => {
+    if (!meses[c.mes]) meses[c.mes] = { total:0, personas:{}, cuotas_pendientes:[] };
+    const m = meses[c.mes];
+    const n = c.entre_quienes.length || 1;
     m.total += c.monto_cuota;
-    personas.forEach(p => {
-      if (!m.personas[p]) m.personas[p] = 0;
-      m.personas[p] += c.monto_cuota / n;
-    });
-    if (c.cuotas_total > 1) {
+    c.entre_quienes.forEach(p => { m.personas[p] = (m.personas[p]||0) + c.monto_cuota/n; });
+    if (c.cuotas_total > 1)
       m.cuotas_pendientes.push(`${c.descripcion} (${c.cuota_num}/${c.cuotas_total}): ${fmt(c.monto_cuota)}`);
-    }
   });
-
   return meses;
 }
 
 // ── Render resumen ────────────────────────────────────────────────────────────
-function renderResumen(gastos) {
-  const total  = gastos.reduce((s,g) => s+g.monto, 0);
-  const pjav   = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_A).reduce((s,g)=>s+g.monto,0);
-  const prom   = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_B).reduce((s,g)=>s+g.monto,0);
+function renderResumen(gastos, pagos) {
+  const total = gastos.reduce((s,g) => s+g.monto, 0);
+  const pjav  = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_A).reduce((s,g)=>s+g.monto,0);
+  const prom  = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_B).reduce((s,g)=>s+g.monto,0);
 
   document.getElementById("m-total").textContent  = fmt(total);
   document.getElementById("m-count").textContent  = `${gastos.length} gastos`;
@@ -324,15 +429,14 @@ function renderResumen(gastos) {
   document.getElementById("m-prom").textContent   = gastos.length ? fmt(total/gastos.length) : "—";
 
   // Balance
-  const saldos = calcularBalance(gastos);
-  const cont   = document.getElementById("deuda-container");
-  const personas = [...new Set(gastos.flatMap(g => (g.entre_quienes || []).map(normalizar)))];
+  const saldos   = calcularBalance(gastos, pagos);
+  const cont     = document.getElementById("deuda-container");
+  const personas = [...new Set(gastos.flatMap(g => (g.entre_quienes||[]).map(normalizar)))];
 
-  if (!personas.length) { cont.innerHTML = '<div class="empty">Sin datos suficientes</div>'; return; }
+  if (!personas.length) { cont.innerHTML = '<div class="empty">Sin datos</div>'; return; }
 
-  // Simplificar: quien tiene saldo negativo le debe a quien tiene positivo
-  const deudores  = personas.filter(p => (saldos[p]||0) < -50).sort((a,b) => saldos[a]-saldos[b]);
-  const acreedores= personas.filter(p => (saldos[p]||0) > 50);
+  const deudores   = personas.filter(p => (saldos[p]||0) < -50).sort((a,b) => saldos[a]-saldos[b]);
+  const acreedores = personas.filter(p => (saldos[p]||0) > 50);
 
   let html = "";
   if (!deudores.length) {
@@ -344,26 +448,42 @@ function renderResumen(gastos) {
         if (monto > 50) {
           html += `<div class="deuda-row">
             <span class="deuda-persona">${d}</span>
-            <span class="arrow">→ debe → ${fmt(monto)} → ${a}</span>
-            <span class="deuda-monto debe">${fmt(monto)}</span>
+            <span class="arrow">debe ${fmt(monto)} a ${a}</span>
+            <button class="btn btn-green" style="font-size:12px;padding:5px 10px" onclick="abrirModalSaldar('${d}','${a}',${monto})">💸 Saldar</button>
           </div>`;
         }
       });
     });
-    // Saldos individuales
     html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">`;
     personas.forEach(p => {
-      const s = saldos[p] || 0;
-      const cls = s >= 0 ? "ok" : "debe";
-      const lbl = s >= 0 ? "a favor" : "debe";
+      const s = saldos[p]||0;
       html += `<div class="deuda-row">
         <span class="deuda-persona">${p}</span>
-        <span class="deuda-monto ${cls}">${fmt(Math.abs(s))} ${lbl}</span>
+        <span class="deuda-monto ${s>=0?'ok':'debe'}">${fmt(Math.abs(s))} ${s>=0?'a favor':'debe'}</span>
       </div>`;
     });
     html += `</div>`;
   }
   cont.innerHTML = html;
+
+  // Historial de pagos
+  const pagosCard = document.getElementById("pagos-card");
+  if (pagos && pagos.length) {
+    pagosCard.style.display = "block";
+    const pagoRows = pagos.map(p => {
+      const fecha = new Date(p.fecha+"T12:00:00").toLocaleDateString("es-CL");
+      return `<div class="pago-row">
+        <span class="pago-fecha">${fecha}</span>
+        <span>${normalizar(p.de)} → ${normalizar(p.para)}</span>
+        <span class="pago-monto">${fmt(p.monto)}</span>
+        ${p.notas ? `<span style="color:var(--muted);font-size:12px">${p.notas}</span>` : "<span></span>"}
+        <button class="btn-del-pago" onclick="eliminarPago(${p.id})" title="Eliminar">🗑</button>
+      </div>`;
+    }).join("");
+    document.getElementById("pagos-container").innerHTML = pagoRows;
+  } else {
+    pagosCard.style.display = "none";
+  }
 
   // Charts
   const cats = {};
@@ -394,61 +514,47 @@ function renderProyeccion(gastos) {
   const proyeccion = calcularProyeccion(gastos);
   const meses      = Object.keys(proyeccion).sort();
   const cont       = document.getElementById("proyeccion-container");
+  if (!meses.length) { cont.innerHTML='<div class="empty">Sin gastos para proyectar</div>'; return; }
 
-  if (!meses.length) { cont.innerHTML = '<div class="empty">Sin gastos para proyectar</div>'; return; }
-
-  const hoy       = new Date();
-  const mesActual = hoy.toISOString().slice(0,7);
-
+  const mesActual = new Date().toISOString().slice(0,7);
   let html = '<div class="proyeccion-grid">';
   meses.forEach(mes => {
-    const d     = proyeccion[mes];
-    const [y,m] = mes.split("-");
-    const nombre= new Date(mes+"-15").toLocaleDateString("es-CL",{month:"long",year:"numeric"});
-    const esMesActual = mes === mesActual;
-    const esFuturo    = mes > mesActual;
-
-    const badge_mes = esFuturo ? `<span style="font-size:11px;background:#E6F1FB;color:#185FA5;padding:2px 8px;border-radius:20px">proyectado</span>`
-                   : esMesActual ? `<span style="font-size:11px;background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:20px">en curso</span>`
-                   : "";
+    const d      = proyeccion[mes];
+    const nombre = new Date(mes+"-15").toLocaleDateString("es-CL",{month:"long",year:"numeric"});
+    const esFuturo = mes > mesActual;
+    const esActual = mes === mesActual;
+    const pill = esFuturo
+      ? `<span style="font-size:11px;background:#E6F1FB;color:#185FA5;padding:2px 8px;border-radius:20px">proyectado</span>`
+      : esActual
+      ? `<span style="font-size:11px;background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:20px">en curso</span>`
+      : "";
 
     let personas_html = "";
     Object.entries(d.personas).sort((a,b)=>b[1]-a[1]).forEach(([p,v]) => {
       personas_html += `<div class="mes-persona-row"><span class="nombre">${p}</span><span>${fmt(v)}</span></div>`;
     });
-
     let cuotas_html = "";
     if (d.cuotas_pendientes.length) {
-      cuotas_html = `<div class="mes-cuotas"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Cuotas incluidas:</div>`;
-      d.cuotas_pendientes.forEach(c => {
-        cuotas_html += `<div class="mes-cuota-item"><span style="color:var(--muted)">${c}</span></div>`;
-      });
+      cuotas_html = `<div class="mes-cuotas"><div style="margin-bottom:4px">Cuotas incluidas:</div>`;
+      d.cuotas_pendientes.forEach(c => { cuotas_html += `<div class="mes-cuota-item"><span>${c}</span></div>`; });
       cuotas_html += `</div>`;
     }
-
     html += `<div class="mes-card">
-      <div class="mes-header">
-        <span class="mes-titulo">${nombre} ${badge_mes}</span>
-        <span class="mes-total">${fmt(d.total)}</span>
-      </div>
-      <div class="mes-body">
-        ${personas_html}
-        ${cuotas_html}
-      </div>
+      <div class="mes-header"><span class="mes-titulo">${nombre} ${pill}</span><span class="mes-total">${fmt(d.total)}</span></div>
+      <div class="mes-body">${personas_html}${cuotas_html}</div>
     </div>`;
   });
-  html += "</div>";
-  cont.innerHTML = html;
+  cont.innerHTML = html + "</div>";
 }
 
-// ── Render tabla detalle ──────────────────────────────────────────────────────
+// ── Render tabla ──────────────────────────────────────────────────────────────
 function renderTabla(gastos) {
   document.getElementById("count-label").textContent = `(${gastos.length})`;
   const cont = document.getElementById("tabla-container");
   if (!gastos.length) { cont.innerHTML='<div class="empty">Sin gastos</div>'; return; }
 
   const rows = gastos.map(g => {
-    const personas  = Array.isArray(g.entre_quienes) ? g.entre_quienes.join(", ") : "";
+    const personas  = Array.isArray(g.entre_quienes) ? g.entre_quienes.map(normalizar).join(", ") : "";
     const pagador   = normalizar(g.pagado_por || g.registrado_por || "");
     const fecha     = g.fecha ? new Date(g.fecha+"T12:00:00").toLocaleDateString("es-CL") : "—";
     const cuota_txt = g.cuotas > 1 ? `<br><span style="font-size:11px;color:var(--muted)">${g.cuotas} cuotas</span>` : "";
@@ -469,6 +575,45 @@ function renderTabla(gastos) {
   </table></div>`;
 }
 
+// ── Exportar Excel ────────────────────────────────────────────────────────────
+function exportarExcel() {
+  const gastos = filtrar(todosLosGastos);
+  if (!gastos.length) { alert("No hay gastos para exportar"); return; }
+
+  const data = gastos.map(g => ({
+    "Fecha":        g.fecha,
+    "Descripción":  g.descripcion,
+    "Categoría":    g.categoria,
+    "Monto":        g.monto,
+    "Cuotas":       g.cuotas || 1,
+    "Pagó":         normalizar(g.pagado_por || g.registrado_por),
+    "Entre quiénes":Array.isArray(g.entre_quienes) ? g.entre_quienes.map(normalizar).join(", ") : "",
+    "Mi parte":     g.mi_parte,
+    "Notas":        g.notas || "",
+  }));
+
+  // Agregar hoja de pagos si hay
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws["!cols"] = [10,30,14,12,8,12,20,12,20].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws, "Gastos");
+
+  if (todosPagos.length) {
+    const dataPagos = todosPagos.map(p => ({
+      "Fecha": p.fecha,
+      "De":    normalizar(p.de),
+      "Para":  normalizar(p.para),
+      "Monto": p.monto,
+      "Notas": p.notas || "",
+    }));
+    const wsPagos = XLSX.utils.json_to_sheet(dataPagos);
+    XLSX.utils.book_append_sheet(wb, wsPagos, "Pagos");
+  }
+
+  const mes = document.getElementById("filter-mes").value || "todos";
+  XLSX.writeFile(wb, `gastos_${mes}.xlsx`);
+}
+
 // ── Poblar filtros ────────────────────────────────────────────────────────────
 function poblarFiltros(gastos) {
   const meses = [...new Set(gastos.map(g=>g.fecha.slice(0,7)))].sort().reverse();
@@ -481,7 +626,7 @@ function poblarFiltros(gastos) {
 async function cargarDatos() {
   document.getElementById("error-msg").style.display = "none";
   try {
-    todosLosGastos = await fetchGastos();
+    [todosLosGastos, todosPagos] = await Promise.all([fetchGastos(), fetchPagos()]);
     poblarFiltros(todosLosGastos);
     renderizar();
     document.getElementById("last-update").textContent = new Date().toLocaleTimeString("es-CL");
@@ -494,8 +639,8 @@ async function cargarDatos() {
 
 function renderizar() {
   const gastos = filtrar(todosLosGastos);
-  renderResumen(gastos);
-  renderProyeccion(todosLosGastos); // proyección siempre sobre todos
+  renderResumen(gastos, todosPagos);
+  renderProyeccion(todosLosGastos);
   renderTabla(gastos);
 }
 
