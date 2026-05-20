@@ -61,7 +61,13 @@ Mes actual: {mes_actual}
 El JSON debe tener exactamente estas claves:
 - descripcion: string (nombre del gasto, máx 60 chars)
 - monto: number (en pesos chilenos; "lucas"=miles, "luca"=mil, dólares×950)
-- categoria: una de [comida, transporte, hogar, salud, ocio, otro]
+- categoria: una de [comida, transporte, hogar, salud, ocio, mascota, otro]. Reglas de prioridad:
+    * "mascota" tiene prioridad sobre cualquier otra categoría si el gasto es relacionado con una mascota.
+      Palabras clave: "Ari", "veterinario", "vet", "vacuna", "antiparasitario", "collar", "correa",
+      "alimento perro", "alimento gato", "comida Ari", "snack Ari", "peluquería canina", "baño perro",
+      "arena gato", "juguete perro", "juguete gato", "consulta veterinaria", "medicamento Ari", "pulgas".
+      IMPORTANTE: "comida Ari" o "alimento Ari" → mascota, NO comida.
+    * Si no aplica ninguna palabra clave de mascota, usar la categoría más apropiada del resto.
 - fecha: string DD/MM/YYYY (usa hoy si no se menciona)
 - cuotas: integer (1 si es al contado)
 - fecha_primera_cuota: string MM/YYYY — mes en que cae la primera cuota. Reglas:
