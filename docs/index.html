@@ -255,7 +255,9 @@
     <input id="saldar-para" type="text" readonly/>
     <label>Monto</label>
     <input id="saldar-monto" type="number" placeholder="Ej: 36500"/>
-    <label>Fecha</label>
+    <label>Mes que salda <span style="font-size:11px;color:var(--muted)">(puede ser distinto al mes de transferencia)</span></label>
+    <select id="saldar-mes" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px"></select>
+    <label>Fecha de transferencia</label>
     <input id="saldar-fecha" type="date"/>
     <label>Notas (opcional)</label>
     <input id="saldar-notas" type="text" placeholder="Ej: transferencia mayo"/>
@@ -350,7 +352,30 @@ function abrirModalSaldar(de, para, monto) {
   document.getElementById("saldar-monto").value = Math.round(monto);
   document.getElementById("saldar-fecha").value = hoy();
   document.getElementById("saldar-notas").value = "";
+
+  // Populate mes selector with all months that have gastos + next 2 months
+  const mesActivo = document.getElementById("filter-mes").value;
+  const mesesGastos = [...new Set(todosLosGastos.map(g => g.fecha.slice(0,7)))].sort().reverse();
+  const mesHoy = new Date().toISOString().slice(0,7);
+  // Add current and next month if not already present
+  const extras = [mesHoy, nextMonth(mesHoy)];
+  const todosMeses = [...new Set([...extras, ...mesesGastos])].sort().reverse();
+
+  const sel = document.getElementById("saldar-mes");
+  sel.innerHTML = todosMeses.map(m => {
+    const [y,mo] = m.split("-");
+    const label  = new Date(m+"-15").toLocaleDateString("es-CL",{month:"long",year:"numeric"});
+    const selected = m === (mesActivo || mesHoy) ? "selected" : "";
+    return `<option value="${m}" ${selected}>${label}</option>`;
+  }).join("");
+
   document.getElementById("modal-saldar").classList.add("open");
+}
+
+function nextMonth(mesYYYYMM) {
+  const [y,m] = mesYYYYMM.split("-").map(Number);
+  const d = new Date(y, m, 1); // month is 0-indexed, so m = next month already
+  return d.toISOString().slice(0,7);
 }
 
 function cerrarModal() {
@@ -366,6 +391,7 @@ async function confirmarPago() {
 
   if (!monto || monto <= 0) { alert("Ingresa un monto válido"); return; }
 
+  const mes_referencia = document.getElementById("saldar-mes").value;
   const r = await fetch(`${SUPABASE_URL}/rest/v1/pagos`, {
     method:"POST",
     headers:{
@@ -374,7 +400,7 @@ async function confirmarPago() {
       "Content-Type":"application/json",
       "Prefer":"return=minimal"
     },
-    body: JSON.stringify({ de, para, monto, fecha, notas })
+    body: JSON.stringify({ de, para, monto, fecha, notas, mes_referencia })
   });
 
   if (r.ok) { cerrarModal(); cargarDatos(); }
@@ -421,43 +447,65 @@ function expandirCuotas(gastos) {
   return cuotas;
 }
 
-// ── Balance (gastos + pagos) ───────────────────────────────────────────────────
-function calcularBalance(gastos, pagos) {
+// ── Balance (gastos + pagos, opcionalmente filtrado por mes) ─────────────────
+// mes: "YYYY-MM" o "" para global
+function calcularBalance(gastos, pagos, mes) {
   const saldos = {};
 
-  // Acumular desde gastos
-  expandirCuotas(gastos).forEach(c => {
-    const n      = c.entre_quienes.length || 1;
-    const pagador = c.pagado_por;
-    c.entre_quienes.forEach(p => {
-      saldos[p] = (saldos[p] || 0) - c.monto_cuota / n;
+  // Solo cuotas del mes solicitado (o todas si mes está vacío)
+  expandirCuotas(todosLosGastos)
+    .filter(c => !mes || c.mes === mes)
+    .forEach(c => {
+      const n = c.entre_quienes.length || 1;
+      c.entre_quienes.forEach(p => { saldos[p] = (saldos[p]||0) - c.monto_cuota/n; });
+      saldos[c.pagado_por] = (saldos[c.pagado_por]||0) + c.monto_cuota;
     });
-    saldos[pagador] = (saldos[pagador] || 0) + c.monto_cuota;
-  });
 
-  // Descontar pagos ya realizados
-  (pagos || []).forEach(p => {
-    const de   = normalizar(p.de);
-    const para = normalizar(p.para);
-    saldos[de]   = (saldos[de]   || 0) + p.monto; // quien pagó mejora su saldo
-    saldos[para] = (saldos[para] || 0) - p.monto; // quien recibió reduce su crédito
-  });
+  // Solo pagos cuyo mes_referencia coincide (o todos si mes vacío)
+  (pagos || [])
+    .filter(p => !mes || (p.mes_referencia || p.fecha.slice(0,7)) === mes)
+    .forEach(p => {
+      const de   = normalizar(p.de);
+      const para = normalizar(p.para);
+      saldos[de]   = (saldos[de]  ||0) + p.monto;
+      saldos[para] = (saldos[para]||0) - p.monto;
+    });
 
   return saldos;
 }
 
 // ── Proyección ────────────────────────────────────────────────────────────────
-function calcularProyeccion(gastos) {
+function calcularProyeccion(gastos, pagos) {
   const meses = {};
   expandirCuotas(gastos).forEach(c => {
-    if (!meses[c.mes]) meses[c.mes] = { total:0, personas:{}, cuotas_pendientes:[] };
+    if (!meses[c.mes]) meses[c.mes] = { total:0, personas:{}, cuotas_pendientes:[], saldo_neto:{} };
     const m = meses[c.mes];
     const n = c.entre_quienes.length || 1;
     m.total += c.monto_cuota;
-    c.entre_quienes.forEach(p => { m.personas[p] = (m.personas[p]||0) + c.monto_cuota/n; });
+    c.entre_quienes.forEach(p => {
+      m.personas[p]   = (m.personas[p]  ||0) + c.monto_cuota/n;
+      m.saldo_neto[p] = (m.saldo_neto[p]||0) - c.monto_cuota/n;
+    });
+    m.saldo_neto[c.pagado_por] = (m.saldo_neto[c.pagado_por]||0) + c.monto_cuota;
     if (c.cuotas_total > 1)
       m.cuotas_pendientes.push(`${c.descripcion} (${c.cuota_num}/${c.cuotas_total}): ${fmt(c.monto_cuota)}`);
   });
+
+  // Aplicar pagos al mes que corresponden
+  (pagos||[]).forEach(p => {
+    const mr = p.mes_referencia || p.fecha.slice(0,7);
+    if (!meses[mr]) return;
+    const de   = normalizar(p.de);
+    const para = normalizar(p.para);
+    meses[mr].saldo_neto[de]   = (meses[mr].saldo_neto[de]  ||0) + p.monto;
+    meses[mr].saldo_neto[para] = (meses[mr].saldo_neto[para]||0) - p.monto;
+  });
+
+  // Marcar si el mes está saldado (todos los saldos < 50)
+  Object.values(meses).forEach(m => {
+    m.saldado = Object.values(m.saldo_neto).every(s => Math.abs(s) < 50);
+  });
+
   return meses;
 }
 
@@ -473,8 +521,12 @@ function renderResumen(gastos, pagos) {
   document.getElementById("m-romina").textContent = fmt(prom);
   document.getElementById("m-prom").textContent   = gastos.length ? fmt(total/gastos.length) : "—";
 
-  // Balance
-  const saldos   = calcularBalance(gastos, pagos);
+  // Balance — usa el mes del filtro o el mes actual si no hay filtro
+  const mesActivo  = document.getElementById("filter-mes").value;
+  const mesBalance = mesActivo || new Date().toISOString().slice(0,7);
+  const saldos     = calcularBalance(gastos, pagos, mesBalance);
+  const balanceTitulo = new Date(mesBalance+"-15").toLocaleDateString("es-CL",{month:"long",year:"numeric"});
+  document.querySelector(".deuda-card h3").textContent = "⚖️ Balance — " + balanceTitulo;
   const cont     = document.getElementById("deuda-container");
   const personas = [...new Set(gastos.flatMap(g => (g.entre_quienes||[]).map(normalizar)))];
 
@@ -555,8 +607,8 @@ function renderResumen(gastos, pagos) {
 }
 
 // ── Render proyección ─────────────────────────────────────────────────────────
-function renderProyeccion(gastos) {
-  const proyeccion = calcularProyeccion(gastos);
+function renderProyeccion(gastos, pagos) {
+  const proyeccion = calcularProyeccion(gastos, pagos);
   const meses      = Object.keys(proyeccion).sort();
   const cont       = document.getElementById("proyeccion-container");
   if (!meses.length) { cont.innerHTML='<div class="empty">Sin gastos para proyectar</div>'; return; }
@@ -568,11 +620,13 @@ function renderProyeccion(gastos) {
     const nombre = new Date(mes+"-15").toLocaleDateString("es-CL",{month:"long",year:"numeric"});
     const esFuturo = mes > mesActual;
     const esActual = mes === mesActual;
-    const pill = esFuturo
+    const pill = d.saldado && !esFuturo && !esActual
+      ? `<span style="font-size:11px;background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:20px">✓ saldado</span>`
+      : esFuturo
       ? `<span style="font-size:11px;background:#E6F1FB;color:#185FA5;padding:2px 8px;border-radius:20px">proyectado</span>`
       : esActual
       ? `<span style="font-size:11px;background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:20px">en curso</span>`
-      : "";
+      : `<span style="font-size:11px;background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:20px">pendiente</span>`;
 
     let personas_html = "";
     Object.entries(d.personas).sort((a,b)=>b[1]-a[1]).forEach(([p,v]) => {
@@ -584,9 +638,24 @@ function renderProyeccion(gastos) {
       d.cuotas_pendientes.forEach(c => { cuotas_html += `<div class="mes-cuota-item"><span>${c}</span></div>`; });
       cuotas_html += `</div>`;
     }
+    // Deuda del mes
+    let deuda_html = "";
+    const sn = d.saldo_neto || {};
+    const deudoresMes = Object.entries(sn).filter(([,v]) => v < -50);
+    if (deudoresMes.length && !d.saldado) {
+      deuda_html = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:#A32D2D">`;
+      deudoresMes.forEach(([p, v]) => {
+        const acreedor = Object.entries(sn).find(([,val]) => val > 50)?.[0] || "";
+        deuda_html += `<div>${p} debe ${fmt(Math.abs(v))} a ${acreedor}</div>`;
+      });
+      deuda_html += `</div>`;
+    } else if (d.saldado && !esFuturo) {
+      deuda_html = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:#3B6D11">✓ Deuda saldada</div>`;
+    }
+
     html += `<div class="mes-card">
       <div class="mes-header"><span class="mes-titulo">${nombre} ${pill}</span><span class="mes-total">${fmt(d.total)}</span></div>
-      <div class="mes-body">${personas_html}${cuotas_html}</div>
+      <div class="mes-body">${personas_html}${cuotas_html}${deuda_html}</div>
     </div>`;
   });
   cont.innerHTML = html + "</div>";
@@ -636,12 +705,13 @@ function renderTabla(gastos) {
         <td style="color:var(--muted)">→ pagó a →</td>
         <td style="font-weight:500">${normalizar(p.para)}</td>
         <td style="font-weight:600;color:var(--accent)">${fmt(p.monto)}</td>
+        <td style="color:var(--muted);font-size:12px">${p.mes_referencia ? new Date(p.mes_referencia+"-15").toLocaleDateString("es-CL",{month:"short",year:"numeric"}) : ""}</td>
         <td style="color:var(--muted);font-size:12px">${p.notas||""}</td>
         <td><button class="btn-del" onclick="eliminarPago(${p.id})" title="Eliminar">🗑</button></td>
       </tr>`;
     }).join("");
     detallePagosCont.innerHTML = `<div style="overflow-x:auto"><table>
-      <thead><tr><th>Fecha</th><th>De</th><th></th><th>Para</th><th>Monto</th><th>Notas</th><th></th></tr></thead>
+      <thead><tr><th>Fecha</th><th>De</th><th></th><th>Para</th><th>Monto</th><th>Mes que salda</th><th>Notas</th><th></th></tr></thead>
       <tbody>${pagoRows}</tbody>
     </table></div>`;
   } else {
@@ -775,7 +845,7 @@ async function cargarDatos() {
 function renderizar() {
   const gastos = filtrar(todosLosGastos);
   renderResumen(gastos, todosPagos);
-  renderProyeccion(todosLosGastos);
+  renderProyeccion(todosLosGastos, todosPagos);
   renderTabla(gastos);
 }
 
