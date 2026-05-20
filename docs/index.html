@@ -464,18 +464,29 @@ function expandirCuotas(gastos) {
 // ── Balance (gastos + pagos, opcionalmente filtrado por mes) ─────────────────
 // mes: "YYYY-MM" o "" para global
 function calcularBalance(gastos, pagos, mes) {
+  // Saldo = cuánto te deben (positivo) o cuánto debes (negativo)
+  // Por cada gasto: el pagador adelantó la parte de los demás
+  // → pagador.saldo += parte_de_cada_otro
+  // → cada_otro.saldo -= su_parte
   const saldos = {};
 
-  // Solo cuotas del mes solicitado (o todas si mes está vacío)
   expandirCuotas(todosLosGastos)
     .filter(c => !mes || c.mes === mes)
     .forEach(c => {
-      const n = c.entre_quienes.length || 1;
-      c.entre_quienes.forEach(p => { saldos[p] = (saldos[p]||0) - c.monto_cuota/n; });
-      saldos[c.pagado_por] = (saldos[c.pagado_por]||0) + c.monto_cuota;
+      const personas = c.entre_quienes;
+      const n        = personas.length || 1;
+      const parte    = c.monto_cuota / n;
+      const pagador  = c.pagado_por;
+
+      personas.forEach(p => {
+        if (p === pagador) return; // el pagador no se debe a sí mismo
+        // El otro le debe su parte al pagador
+        saldos[pagador] = (saldos[pagador]||0) + parte;
+        saldos[p]       = (saldos[p]      ||0) - parte;
+      });
     });
 
-  // Solo pagos cuyo mes_referencia coincide (o todos si mes vacío)
+  // Descontar pagos del mes correspondiente
   (pagos || [])
     .filter(p => !mes || (p.mes_referencia || p.fecha.slice(0,7)) === mes)
     .forEach(p => {
@@ -497,10 +508,13 @@ function calcularProyeccion(gastos, pagos) {
     const n = c.entre_quienes.length || 1;
     m.total += c.monto_cuota;
     c.entre_quienes.forEach(p => {
-      m.personas[p]   = (m.personas[p]  ||0) + c.monto_cuota/n;
-      m.saldo_neto[p] = (m.saldo_neto[p]||0) - c.monto_cuota/n;
+      m.personas[p] = (m.personas[p]||0) + c.monto_cuota/n;
+      if (p !== c.pagado_por) {
+        // El que no pagó debe su parte al pagador
+        m.saldo_neto[p]          = (m.saldo_neto[p]         ||0) - c.monto_cuota/n;
+        m.saldo_neto[c.pagado_por] = (m.saldo_neto[c.pagado_por]||0) + c.monto_cuota/n;
+      }
     });
-    m.saldo_neto[c.pagado_por] = (m.saldo_neto[c.pagado_por]||0) + c.monto_cuota;
     if (c.cuotas_total > 1)
       m.cuotas_pendientes.push(`${c.descripcion} (${c.cuota_num}/${c.cuotas_total}): ${fmt(c.monto_cuota)}`);
   });
@@ -565,12 +579,32 @@ function renderResumen(gastos, pagos) {
         }
       });
     });
-    html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">`;
-    personas.forEach(p => {
-      const s = saldos[p]||0;
-      html += `<div class="deuda-row">
-        <span class="deuda-persona">${p}</span>
-        <span class="deuda-monto ${s>=0?'ok':'debe'}">${fmt(Math.abs(s))} ${s>=0?'a favor':'debe'}</span>
+    // Calcular cuánto pagó y debería pagar cada uno en el mes
+    const cuotasMes = expandirCuotas(todosLosGastos).filter(c => !mesBalance || c.mes === mesBalance);
+    const totalMes  = cuotasMes.reduce((s,c) => s + c.monto_cuota, 0);
+    const pagoReal  = {};
+    cuotasMes.forEach(c => {
+      c.entre_quienes.forEach(p => {
+        if (p === c.pagado_por) pagoReal[p] = (pagoReal[p]||0) + c.monto_cuota;
+      });
+    });
+
+    html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 12px;font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">
+        <span></span><span>Pagó</span><span>Debería</span><span>Diferencia</span>
+      </div>`;
+    [PERSONA_A, PERSONA_B].forEach(p => {
+      const pago    = pagoReal[p] || 0;
+      const deberia = totalMes / 2;
+      const diff    = saldos[p] || 0;
+      const diffFmt = diff === 0 ? '<span style="color:var(--muted)">—</span>'
+        : diff > 0 ? `<span style="color:#3B6D11;font-weight:500">+${fmt(diff)} a favor</span>`
+        : `<span style="color:#A32D2D;font-weight:500">${fmt(Math.abs(diff))} debe</span>`;
+      html += `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 12px;padding:8px 0;border-bottom:0.5px solid var(--border);font-size:13px">
+        <span style="font-weight:500">${p}</span>
+        <span>${fmt(pago)}</span>
+        <span style="color:var(--muted)">${fmt(deberia)}</span>
+        <span>${diffFmt}</span>
       </div>`;
     });
     html += `</div>`;
@@ -642,9 +676,28 @@ function renderProyeccion(gastos, pagos) {
       ? `<span style="font-size:11px;background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:20px">en curso</span>`
       : `<span style="font-size:11px;background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:20px">pendiente</span>`;
 
-    let personas_html = "";
-    Object.entries(d.personas).sort((a,b)=>b[1]-a[1]).forEach(([p,v]) => {
-      personas_html += `<div class="mes-persona-row"><span class="nombre">${p}</span><span>${fmt(v)}</span></div>`;
+    // Calcular cuánto pagó cada uno realmente (desde saldo_neto)
+    const totalCompartido = d.total;
+    const deberiaC_u = totalCompartido / 2;
+    // pagó = lo que debería + saldo a favor (o - saldo en deuda)
+    const sn = d.saldo_neto || {};
+
+    let personas_html = `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 12px;font-size:12px;margin-bottom:4px;color:var(--muted)">
+      <span></span><span>Pagó</span><span>Debería</span><span>Diff</span>
+    </div>`;
+    [PERSONA_A, PERSONA_B].forEach(p => {
+      // pagó = deberiaC_u + saldo_neto (si saldo>0 pagó de más, si <0 pagó de menos)
+      const pago_real = deberiaC_u + (sn[p]||0);
+      const diff      = (sn[p]||0);
+      const diffFmt   = diff === 0 ? "—"
+        : diff > 0 ? `<span style="color:#3B6D11">+${fmt(diff)}</span>`
+        : `<span style="color:#A32D2D">${fmt(diff)}</span>`;
+      personas_html += `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 12px;font-size:13px;padding:4px 0;border-bottom:0.5px solid var(--border)">
+        <span style="font-weight:500">${p}</span>
+        <span>${fmt(Math.max(0, pago_real))}</span>
+        <span style="color:var(--muted)">${fmt(deberiaC_u)}</span>
+        <span>${diffFmt}</span>
+      </div>`;
     });
     let cuotas_html = "";
     if (d.cuotas_pendientes.length) {
