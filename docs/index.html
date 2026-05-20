@@ -423,17 +423,31 @@ function filtrar(gastos) {
 }
 
 // ── Expansión cuotas ──────────────────────────────────────────────────────────
+// Parsea "YYYY-MM-DD" sin conversión de zona horaria
+function parseFechaMes(fechaStr) {
+  // Tomamos directamente año y mes del string para evitar desfase de timezone
+  const partes = (fechaStr || "").slice(0, 7).split("-");
+  return { anio: parseInt(partes[0]), mes: parseInt(partes[1]) - 1 }; // mes 0-indexed
+}
+
 function expandirCuotas(gastos) {
   const cuotas = [];
   gastos.forEach(g => {
-    const n    = g.cuotas || 1;
-    const base = new Date((g.fecha_primera_cuota || g.fecha) + "T12:00:00");
+    const n     = g.cuotas || 1;
     const monto = g.monto / n;
+    // Usar fecha_primera_cuota si existe, si no usar fecha del gasto
+    const fechaBase = g.fecha_primera_cuota || g.fecha;
+    const { anio, mes } = parseFechaMes(fechaBase);
+
     for (let i = 0; i < n; i++) {
-      const d = new Date(base);
-      d.setMonth(d.getMonth() + i);
+      // Calcular mes de esta cuota sumando i meses, sin Date() para evitar timezone
+      let mesTotal = mes + i;
+      const anioFinal = anio + Math.floor(mesTotal / 12);
+      const mesFinal  = mesTotal % 12;
+      const mesStr    = `${anioFinal}-${String(mesFinal + 1).padStart(2, "0")}`;
+
       cuotas.push({
-        mes:          d.toISOString().slice(0,7),
+        mes:          mesStr,
         monto_cuota:  monto,
         descripcion:  g.descripcion,
         pagado_por:   normalizar(g.pagado_por || g.registrado_por),
