@@ -79,7 +79,11 @@ El JSON debe tener exactamente estas claves:
     * Si no se menciona nada sobre cuándo empieza → usar el mes actual por defecto
     * Solo es relevante si cuotas > 1; si es al contado usar el mes actual igual
 - entre_quienes: SIEMPRE ["Javier", "Romina"] — todos los gastos son compartidos entre los dos
-- pagado_por: string (quien pagó; si dice "yo pagué" o no se menciona usa "{nombre_usuario}")
+- pagado_por: string — quien pagó el gasto. Reglas estrictas:
+    * Si menciona "Romina", "Romi", "Rome", "ella", "mi pareja" pagó → "Romina"
+    * Si menciona "Javier", "Javi", "Mondi", "yo", "yo pagué" → "Javier"
+    * Si no se menciona quién pagó → "{nombre_usuario}" (quien registra)
+    * Ejemplos: "lo pagó Romi" → "Romina" | "pagué yo" → "{nombre_usuario}" | "Javi pagó" → "Javier"
 - mi_parte: number (SIEMPRE monto / 2 — se divide 50/50)
 - notas: string (info extra o cadena vacía)"""
 
@@ -123,7 +127,10 @@ El JSON debe tener exactamente estas claves:
 - cuotas: integer (1 — asume al contado a menos que la boleta diga cuotas)
 - fecha_primera_cuota: string MM/YYYY (usa el mes actual por defecto)
 - entre_quienes: SIEMPRE ["Javier", "Romina"] — todos los gastos son compartidos entre los dos
-- pagado_por: string ("{nombre_usuario}" — quien tomó la foto pagó)
+- pagado_por: string — quien pagó. Reglas:
+    * Si en la foto o contexto se menciona "Romina", "Romi" pagó → "Romina"
+    * Si se menciona "Javier", "Javi", "Mondi" pagó → "Javier"
+    * Si no hay indicación → "{nombre_usuario}" (quien envió la foto)
 - mi_parte: number (SIEMPRE monto / 2 — se divide 50/50)
 - notas: string (si ves items relevantes en la boleta menciónalos brevemente, si no cadena vacía)
 - confianza: string ("alta", "media", "baja") — qué tan legible estaba la boleta"""
