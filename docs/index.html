@@ -88,6 +88,7 @@
   .badge-salud      { background:#FBEAF0; color:#993556; }
   .badge-ocio       { background:#EEEDFE; color:#534AB7; }
   .badge-otro       { background:#F1EFE8; color:#5F5E5A; }
+  .badge-mascota    { background:#FAE8F5; color:#8B2F7A; }
 
   .page { display:none; } .page.active { display:block; }
   .loading { text-align:center; padding:3rem; color:var(--muted); }
@@ -124,6 +125,7 @@
       <option value="salud">Salud</option>
       <option value="ocio">Ocio</option>
       <option value="otro">Otro</option>
+      <option value="mascota">Mascota</option>
     </select>
   </div>
 
@@ -165,8 +167,32 @@
 // ── CONFIGURACIÓN ────────────────────────────────────────────────────────────
 const SUPABASE_URL      = "https://oomcsihzyurypogwieqc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vbWNzaWh6eXVyeXBvZ3dpZXFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODQ3MzQsImV4cCI6MjA5NDg2MDczNH0.KLIL7qkRUeE52WKICQABZsnv409snJ0xSp-bmfhBjVc";
-const PERSONA_A = "Javier";   // debe coincidir exactamente con el nombre en Telegram
+
+// Nombres canónicos que se muestran en el dashboard
+const PERSONA_A = "Javier";
 const PERSONA_B = "Romina";
+
+// Apodos y variantes que se mapean a cada persona (en minúsculas)
+const ALIAS = {
+  [PERSONA_A]: ["javier", "javi", "mondi", "jmondionu", "j"],
+  [PERSONA_B]: ["romina", "romi", "rome", "ro"],
+};
+
+// Devuelve el nombre canónico (PERSONA_A o PERSONA_B) dado cualquier variante,
+// o el nombre original si no se reconoce
+function normalizar(nombre) {
+  if (!nombre) return nombre;
+  const n = nombre.toLowerCase().trim();
+  for (const [canonical, aliases] of Object.entries(ALIAS)) {
+    if (aliases.includes(n)) return canonical;
+  }
+  // Coincidencia parcial como fallback (ej: "Javier M." → Javier)
+  for (const [canonical, aliases] of Object.entries(ALIAS)) {
+    if (aliases.some(a => n.startsWith(a) || a.startsWith(n))) return canonical;
+  }
+  // Capitaliza el nombre desconocido para mostrarlo consistentemente
+  return nombre.charAt(0).toUpperCase() + nombre.slice(1);
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 let chartCat = null, chartMes = null;
@@ -225,8 +251,8 @@ function expandirCuotas(gastos) {
         mes,
         monto_cuota: monto,
         descripcion: g.descripcion,
-        pagado_por:  g.pagado_por || g.registrado_por,
-        entre_quienes: g.entre_quienes || [g.registrado_por],
+        pagado_por:  normalizar(g.pagado_por || g.registrado_por),
+        entre_quienes: (g.entre_quienes || [g.registrado_por]).map(normalizar),
         cuota_num: i + 1,
         cuotas_total: n,
         id: g.id,
@@ -288,8 +314,8 @@ function calcularProyeccion(gastos) {
 // ── Render resumen ────────────────────────────────────────────────────────────
 function renderResumen(gastos) {
   const total  = gastos.reduce((s,g) => s+g.monto, 0);
-  const pjav   = gastos.filter(g => (g.pagado_por||g.registrado_por) === PERSONA_A).reduce((s,g)=>s+g.monto,0);
-  const prom   = gastos.filter(g => (g.pagado_por||g.registrado_por) === PERSONA_B).reduce((s,g)=>s+g.monto,0);
+  const pjav   = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_A).reduce((s,g)=>s+g.monto,0);
+  const prom   = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_B).reduce((s,g)=>s+g.monto,0);
 
   document.getElementById("m-total").textContent  = fmt(total);
   document.getElementById("m-count").textContent  = `${gastos.length} gastos`;
@@ -343,7 +369,7 @@ function renderResumen(gastos) {
   const cats = {};
   gastos.forEach(g => { cats[g.categoria] = (cats[g.categoria]||0)+g.monto; });
   const catLabels = Object.keys(cats);
-  const COLORS = { comida:"#639922",transporte:"#378ADD",hogar:"#EF9F27",salud:"#D4537E",ocio:"#7F77DD",otro:"#888780" };
+  const COLORS = { comida:"#639922",transporte:"#378ADD",hogar:"#EF9F27",salud:"#D4537E",ocio:"#7F77DD",mascota:"#C048A8",otro:"#888780" };
   if (chartCat) chartCat.destroy();
   chartCat = new Chart(document.getElementById("chart-cat"), {
     type:"doughnut",
@@ -423,7 +449,7 @@ function renderTabla(gastos) {
 
   const rows = gastos.map(g => {
     const personas  = Array.isArray(g.entre_quienes) ? g.entre_quienes.join(", ") : "";
-    const pagador   = g.pagado_por || g.registrado_por || "";
+    const pagador   = normalizar(g.pagado_por || g.registrado_por || "");
     const fecha     = g.fecha ? new Date(g.fecha+"T12:00:00").toLocaleDateString("es-CL") : "—";
     const cuota_txt = g.cuotas > 1 ? `<br><span style="font-size:11px;color:var(--muted)">${g.cuotas} cuotas</span>` : "";
     return `<tr>
@@ -482,3 +508,4 @@ setInterval(cargarDatos, 30000);
 </script>
 </body>
 </html>
+
