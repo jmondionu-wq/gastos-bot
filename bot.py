@@ -3,6 +3,7 @@ import json
 import logging
 from datetime import datetime
 
+import asyncio
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import Conflict
@@ -10,6 +11,7 @@ from telegram.ext import (
     Application, MessageHandler, CommandHandler,
     CallbackQueryHandler, filters, ContextTypes
 )
+from telegram.request import HTTPXRequest
 from supabase import create_client, Client
 
 logging.basicConfig(level=logging.INFO)
@@ -312,19 +314,19 @@ async def manejar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── main ──────────────────────────────────────────────────────────────────────
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if isinstance(context.error, Conflict):
-        logger.warning("Conflicto de instancias — esperando 5s para que la anterior termine...")
-        import asyncio
-        await asyncio.sleep(5)
-    else:
-        logger.error(f"Error: {context.error}", exc_info=context.error)
+    """Loguea errores de handlers, el Conflict se maneja en el loop principal."""
+    if not isinstance(context.error, Conflict):
+        logger.error(f"Error en handler: {context.error}", exc_info=context.error)
 
 
-def main():
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+def construir_app():
+    """Crea una instancia fresca de la aplicación con todos sus handlers."""
+    app = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .request(HTTPXRequest(connect_timeout=10, read_timeout=30))
+        .build()
+    )
     app.add_handler(CommandHandler("start",    cmd_start))
     app.add_handler(CommandHandler("resumen",  cmd_resumen))
     app.add_handler(CommandHandler("eliminar", cmd_eliminar))
@@ -332,8 +334,53 @@ def main():
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, manejar_audio))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, manejar_texto))
     app.add_error_handler(error_handler)
-    logger.info("Bot iniciado...")
-    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+    return app
+
+
+async def run_bot():
+    max_intentos = 10
+    for intento in range(1, max_intentos + 1):
+        # Nueva instancia en cada intento — Application no se puede reinicializar
+        app = construir_app()
+        try:
+            logger.info(f"Intento {intento}/{max_intentos} de conectar...")
+            await app.initialize()
+            await app.bot.delete_webhook(drop_pending_updates=True)
+            await app.start()
+            await app.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True,
+            )
+            logger.info("✅ Bot iniciado correctamente.")
+            # Bloquea aquí hasta que Render detenga el proceso
+            await asyncio.Event().wait()
+        except Conflict:
+            logger.warning(f"Conflicto detectado (intento {intento}/{max_intentos}). Esperando 10s...")
+            try:
+                await app.updater.stop()
+                await app.stop()
+                await app.shutdown()
+            except Exception:
+                pass
+            if intento == max_intentos:
+                logger.error("Se agotaron los reintentos. Saliendo.")
+                raise
+            await asyncio.sleep(10)
+        except Exception as e:
+            logger.error(f"Error inesperado: {e}", exc_info=True)
+            try:
+                await app.updater.stop()
+                await app.stop()
+                await app.shutdown()
+            except Exception:
+                pass
+            raise
+
+
+def main():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(run_bot())
 
 
 if __name__ == "__main__":
