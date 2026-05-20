@@ -78,9 +78,9 @@ El JSON debe tener exactamente estas claves:
     * Si dice "desde ya", "este mes", "cuota uno este mes" → usar el mes actual
     * Si no se menciona nada sobre cuándo empieza → usar el mes actual por defecto
     * Solo es relevante si cuotas > 1; si es al contado usar el mes actual igual
-- entre_quienes: array de strings (nombres; si dice "yo" usa "{nombre_usuario}"; si no menciona nadie usa ["{nombre_usuario}"])
+- entre_quienes: SIEMPRE ["Javier", "Romina"] — todos los gastos son compartidos entre los dos
 - pagado_por: string (quien pagó; si dice "yo pagué" o no se menciona usa "{nombre_usuario}")
-- mi_parte: number (monto que le corresponde a quien registra)
+- mi_parte: number (SIEMPRE monto / 2 — se divide 50/50)
 - notas: string (info extra o cadena vacía)"""
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -122,9 +122,9 @@ El JSON debe tener exactamente estas claves:
 - fecha: string DD/MM/YYYY (léela de la boleta; si no se ve claramente usa hoy)
 - cuotas: integer (1 — asume al contado a menos que la boleta diga cuotas)
 - fecha_primera_cuota: string MM/YYYY (usa el mes actual por defecto)
-- entre_quienes: array con ["{nombre_usuario}"] (solo quien registra; puede ajustarse después)
-- pagado_por: string ("{nombre_usuario}")
-- mi_parte: number (igual al monto total, ya que asumimos pago individual)
+- entre_quienes: SIEMPRE ["Javier", "Romina"] — todos los gastos son compartidos entre los dos
+- pagado_por: string ("{nombre_usuario}" — quien tomó la foto pagó)
+- mi_parte: number (SIEMPRE monto / 2 — se divide 50/50)
 - notas: string (si ves items relevantes en la boleta menciónalos brevemente, si no cadena vacía)
 - confianza: string ("alta", "media", "baja") — qué tan legible estaba la boleta"""
 
@@ -193,14 +193,14 @@ def guardar_gasto(gasto: dict, username: str) -> dict:
 
 def formatear_preview(gasto: dict, username: str) -> str:
     """Mensaje de previsualización antes de confirmar."""
-    monto_fmt  = f"${float(gasto.get('monto', 0)):,.0f}".replace(",", ".")
-    mi_parte   = f"${float(gasto.get('mi_parte', 0)):,.0f}".replace(",", ".")
-    personas   = ", ".join(gasto.get("entre_quienes", [username]))
+    monto      = float(gasto.get("monto", 0))
+    monto_fmt  = f"${monto:,.0f}".replace(",", ".")
+    mi_parte   = f"${monto/2:,.0f}".replace(",", ".")
     pagado_por = gasto.get("pagado_por", username)
-    n_cuotas  = int(gasto.get("cuotas", 1))
-    cuota_txt = f"en {n_cuotas} cuotas" if n_cuotas > 1 else "al contado"
-    fpc       = gasto.get("fecha_primera_cuota", "")
-    cuota_por_persona = float(gasto.get("monto", 0)) / n_cuotas / max(len(gasto.get("entre_quienes", [username])), 1)
+    n_cuotas   = int(gasto.get("cuotas", 1))
+    cuota_txt  = f"en {n_cuotas} cuotas" if n_cuotas > 1 else "al contado"
+    fpc        = gasto.get("fecha_primera_cuota", "")
+    cuota_c_u  = f"${monto / n_cuotas / 2:,.0f}".replace(",", ".")
 
     lineas = [
         "🔍 *¿Confirmas este gasto?*\n",
@@ -208,15 +208,13 @@ def formatear_preview(gasto: dict, username: str) -> str:
         f"💰 {monto_fmt} ({cuota_txt})",
     ]
     if n_cuotas > 1:
-        lineas.append(f"📆 Primera cuota: {fpc} — ${cuota_por_persona:,.0f}/mes c/u".replace(",", "."))
+        lineas.append(f"📆 Primera cuota: {fpc} — {cuota_c_u}/mes c/u")
     lineas += [
         f"🏷️ {gasto.get('categoria', '').capitalize()}",
         f"📅 {gasto.get('fecha', '')}",
         f"💳 Pagó: {pagado_por}",
-        f"👥 Entre: {personas}",
+        f"👥 Javier & Romina — {mi_parte} c/u",
     ]
-    if len(gasto.get("entre_quienes", [])) > 1:
-        lineas.append(f"🔹 Tu parte: {mi_parte}")
     if gasto.get("notas"):
         lineas.append(f"📌 {gasto['notas']}")
     return "\n".join(lineas)
