@@ -174,8 +174,8 @@ const PERSONA_B = "Romina";
 
 // Apodos y variantes que se mapean a cada persona (en minúsculas)
 const ALIAS = {
-  [PERSONA_A]: ["javier", "javi", "mondi", "jmondionu", "j", "monyi"],
-  [PERSONA_B]: ["romina", "romi", "rome", "ro", "yomi"],
+  [PERSONA_A]: ["javier", "javi", "mondi", "jmondionu", "j"],
+  [PERSONA_B]: ["romina", "romi", "rome", "ro"],
 };
 
 // Devuelve el nombre canónico (PERSONA_A o PERSONA_B) dado cualquier variante,
@@ -326,7 +326,7 @@ function renderResumen(gastos) {
   // Balance
   const saldos = calcularBalance(gastos);
   const cont   = document.getElementById("deuda-container");
-  const personas = [...new Set(gastos.flatMap(g => g.entre_quienes || []))];
+  const personas = [...new Set(gastos.flatMap(g => (g.entre_quienes || []).map(normalizar)))];
 
   if (!personas.length) { cont.innerHTML = '<div class="empty">Sin datos suficientes</div>'; return; }
 
@@ -508,4 +508,3 @@ setInterval(cargarDatos, 30000);
 </script>
 </body>
 </html>
-
