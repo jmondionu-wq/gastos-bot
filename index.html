@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gastos Javier & Romina</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:      #f5f4f0;
+    --surface: #ffffff;
+    --border:  #e2e0d8;
+    --text:    #1a1a18;
+    --muted:   #6b6a64;
+    --accent:  #1D9E75;
+    --danger:  #E24B4A;
+    --radius:  12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1a1a18; --surface:#242422; --border:#383835; --text:#e8e6de; --muted:#9c9a92; }
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); }
+
+  header { background:var(--surface); border-bottom:1px solid var(--border); padding:1rem 1.5rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+  header h1 { font-size:18px; font-weight:600; }
+  .header-right { display:flex; align-items:center; gap:12px; }
+  #last-update { font-size:12px; color:var(--muted); }
+
+  nav { display:flex; gap:2px; background:var(--bg); padding:1rem 1.5rem 0; }
+  .tab { padding:8px 16px; font-size:13px; border-radius:8px 8px 0 0; cursor:pointer; border:1px solid transparent; border-bottom:none; color:var(--muted); }
+  .tab.active { background:var(--surface); border-color:var(--border); color:var(--text); font-weight:500; }
+
+  .container { max-width:960px; margin:0 auto; padding:1.5rem; }
+
+  .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:1.5rem; }
+  .filters select { font-size:13px; padding:7px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); }
+  .btn-refresh { padding:7px 14px; border-radius:8px; background:var(--accent); color:#fff; border:none; font-size:13px; cursor:pointer; font-weight:500; }
+
+  .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:1.5rem; }
+  .metric { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; }
+  .metric .label { font-size:11px; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.04em; }
+  .metric .value { font-size:20px; font-weight:600; }
+  .metric .sub   { font-size:11px; color:var(--muted); margin-top:3px; }
+
+  /* Deuda card */
+  .deuda-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1.25rem; margin-bottom:1.5rem; }
+  .deuda-card h3 { font-size:14px; font-weight:500; margin-bottom:1rem; }
+  .deuda-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); }
+  .deuda-row:last-child { border-bottom:none; }
+  .deuda-persona { font-size:13px; }
+  .deuda-monto { font-size:16px; font-weight:600; }
+  .deuda-monto.debe { color:var(--danger); }
+  .deuda-monto.ok   { color:var(--accent); }
+  .arrow { font-size:13px; color:var(--muted); }
+
+  /* Proyección mensual */
+  .proyeccion-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; margin-bottom:1.5rem; }
+  .mes-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .mes-header { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+  .mes-titulo { font-size:14px; font-weight:500; }
+  .mes-total  { font-size:13px; color:var(--muted); }
+  .mes-body   { padding:12px 16px; }
+  .mes-persona-row { display:flex; justify-content:space-between; padding:5px 0; font-size:13px; }
+  .mes-persona-row .nombre { color:var(--muted); }
+  .mes-cuotas { font-size:11px; color:var(--muted); margin-top:8px; border-top:1px solid var(--border); padding-top:8px; }
+  .mes-cuota-item { display:flex; justify-content:space-between; padding:3px 0; font-size:12px; }
+
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:1.5rem; }
+  @media(max-width:600px) { .charts { grid-template-columns:1fr; } }
+  .chart-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; }
+  .chart-card h3 { font-size:14px; font-weight:500; margin-bottom:12px; }
+
+  .table-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .table-card h3 { font-size:14px; font-weight:500; padding:1rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; padding:8px 12px; color:var(--muted); font-weight:500; font-size:12px; border-bottom:1px solid var(--border); }
+  td { padding:10px 12px; border-bottom:1px solid var(--border); }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:var(--bg); }
+  .btn-del { background:none; border:none; cursor:pointer; color:var(--muted); font-size:16px; padding:2px 6px; border-radius:4px; }
+  .btn-del:hover { color:var(--danger); background:#FCEBEB; }
+
+  .badge { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:500; }
+  .badge-comida     { background:#EAF3DE; color:#3B6D11; }
+  .badge-transporte { background:#E6F1FB; color:#185FA5; }
+  .badge-hogar      { background:#FAEEDA; color:#854F0B; }
+  .badge-salud      { background:#FBEAF0; color:#993556; }
+  .badge-ocio       { background:#EEEDFE; color:#534AB7; }
+  .badge-otro       { background:#F1EFE8; color:#5F5E5A; }
+
+  .page { display:none; } .page.active { display:block; }
+  .loading { text-align:center; padding:3rem; color:var(--muted); }
+  .error { background:#FCEBEB; color:#A32D2D; padding:1rem; border-radius:8px; margin-bottom:1rem; font-size:13px; }
+  .empty { text-align:center; padding:2rem; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>💰 Javier & Romina</h1>
+  <div class="header-right">
+    <span id="last-update"></span>
+    <button class="btn-refresh" onclick="cargarDatos()">↻ Actualizar</button>
+  </div>
+</header>
+
+<nav>
+  <div class="tab active" onclick="showTab('resumen')">Resumen</div>
+  <div class="tab" onclick="showTab('proyeccion')">Proyección</div>
+  <div class="tab" onclick="showTab('detalle')">Detalle</div>
+</nav>
+
+<div class="container">
+  <div id="error-msg" class="error" style="display:none"></div>
+
+  <div class="filters">
+    <select id="filter-mes"><option value="">Todos los meses</option></select>
+    <select id="filter-cat">
+      <option value="">Todas las categorías</option>
+      <option value="comida">Comida</option>
+      <option value="transporte">Transporte</option>
+      <option value="hogar">Hogar</option>
+      <option value="salud">Salud</option>
+      <option value="ocio">Ocio</option>
+      <option value="otro">Otro</option>
+    </select>
+  </div>
+
+  <!-- ── RESUMEN ── -->
+  <div id="page-resumen" class="page active">
+    <div class="metrics">
+      <div class="metric"><div class="label">Total período</div><div class="value" id="m-total">—</div><div class="sub" id="m-count">—</div></div>
+      <div class="metric"><div class="label">Pagó Javier</div><div class="value" id="m-javier">—</div></div>
+      <div class="metric"><div class="label">Pagó Romina</div><div class="value" id="m-romina">—</div></div>
+      <div class="metric"><div class="label">Promedio gasto</div><div class="value" id="m-prom">—</div></div>
+    </div>
+
+    <div class="deuda-card">
+      <h3>⚖️ Balance — quién le debe a quién</h3>
+      <div id="deuda-container"><div class="loading">Calculando...</div></div>
+    </div>
+
+    <div class="charts">
+      <div class="chart-card"><h3>Por categoría</h3><canvas id="chart-cat" height="200"></canvas></div>
+      <div class="chart-card"><h3>Evolución mensual</h3><canvas id="chart-mes" height="200"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── PROYECCIÓN ── -->
+  <div id="page-proyeccion" class="page">
+    <div id="proyeccion-container"><div class="loading">Calculando proyección...</div></div>
+  </div>
+
+  <!-- ── DETALLE ── -->
+  <div id="page-detalle" class="page">
+    <div class="table-card">
+      <h3>Todos los gastos <span id="count-label" style="font-weight:400;color:var(--muted)"></span></h3>
+      <div id="tabla-container"><div class="loading">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIGURACIÓN ────────────────────────────────────────────────────────────
+const SUPABASE_URL      = "https://TU_PROJECT_ID.supabase.co";
+const SUPABASE_ANON_KEY = "TU_ANON_KEY";
+const PERSONA_A = "Javier";   // debe coincidir exactamente con el nombre en Telegram
+const PERSONA_B = "Romina";
+// ─────────────────────────────────────────────────────────────────────────────
+
+let chartCat = null, chartMes = null;
+let todosLosGastos = [];
+
+const fmt = n => "$" + Math.round(n).toLocaleString("es-CL");
+const badge = c => `<span class="badge badge-${c}">${c[0].toUpperCase()+c.slice(1)}</span>`;
+
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach((t,i) => t.classList.toggle("active", ["resumen","proyeccion","detalle"][i]===name));
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.getElementById("page-"+name).classList.add("active");
+}
+
+async function fetchGastos() {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/gastos?select=*&order=fecha.desc,created_at.desc&limit=1000`, {
+    headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}` }
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function eliminarGasto(id, btn) {
+  if (!confirm(`¿Eliminar gasto #${id}?`)) return;
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/gastos?id=eq.${id}`, {
+    method: "DELETE",
+    headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}` }
+  });
+  if (resp.ok) { btn.closest("tr").remove(); cargarDatos(); }
+  else alert("Error al eliminar");
+}
+
+function filtrar(gastos) {
+  const mes = document.getElementById("filter-mes").value;
+  const cat = document.getElementById("filter-cat").value;
+  return gastos.filter(g =>
+    (!mes || g.fecha.startsWith(mes)) &&
+    (!cat || g.categoria === cat)
+  );
+}
+
+// ── Expansión de cuotas ───────────────────────────────────────────────────────
+// Dado un gasto con N cuotas que empieza en fecha X,
+// devuelve un array de {mes, monto_cuota, descripcion, pagado_por, entre_quienes}
+function expandirCuotas(gastos) {
+  const cuotas = [];
+  gastos.forEach(g => {
+    const n      = g.cuotas || 1;
+    const base   = new Date(g.fecha + "T12:00:00");
+    const monto  = g.monto / n;
+    for (let i = 0; i < n; i++) {
+      const d = new Date(base);
+      d.setMonth(d.getMonth() + i);
+      const mes = d.toISOString().slice(0, 7);
+      cuotas.push({
+        mes,
+        monto_cuota: monto,
+        descripcion: g.descripcion,
+        pagado_por:  g.pagado_por || g.registrado_por,
+        entre_quienes: g.entre_quienes || [g.registrado_por],
+        cuota_num: i + 1,
+        cuotas_total: n,
+        id: g.id,
+      });
+    }
+  });
+  return cuotas;
+}
+
+// ── Balance ───────────────────────────────────────────────────────────────────
+// Para cada cuota pagada: quien pagó adelantó el total.
+// Cada participante debe su parte (monto/participantes).
+// Saldo = lo que pagaste - lo que deberías haber pagado.
+function calcularBalance(gastos) {
+  const saldos = {};
+  const cuotas = expandirCuotas(gastos);
+
+  cuotas.forEach(c => {
+    const personas = c.entre_quienes;
+    const n        = personas.length || 1;
+    const pagador  = c.pagado_por;
+    const total    = c.monto_cuota;
+
+    personas.forEach(p => {
+      if (!saldos[p]) saldos[p] = 0;
+      saldos[p] -= total / n; // cada uno debe su parte
+    });
+    if (!saldos[pagador]) saldos[pagador] = 0;
+    saldos[pagador] += total; // quien pagó recupera el total
+  });
+
+  return saldos;
+}
+
+// ── Proyección mensual ────────────────────────────────────────────────────────
+function calcularProyeccion(gastos) {
+  const cuotas = expandirCuotas(gastos);
+  const meses  = {};
+
+  cuotas.forEach(c => {
+    if (!meses[c.mes]) meses[c.mes] = { total: 0, personas: {}, cuotas_pendientes: [] };
+    const m        = meses[c.mes];
+    const personas = c.entre_quienes;
+    const n        = personas.length || 1;
+
+    m.total += c.monto_cuota;
+    personas.forEach(p => {
+      if (!m.personas[p]) m.personas[p] = 0;
+      m.personas[p] += c.monto_cuota / n;
+    });
+    if (c.cuotas_total > 1) {
+      m.cuotas_pendientes.push(`${c.descripcion} (${c.cuota_num}/${c.cuotas_total}): ${fmt(c.monto_cuota)}`);
+    }
+  });
+
+  return meses;
+}
+
+// ── Render resumen ────────────────────────────────────────────────────────────
+function renderResumen(gastos) {
+  const total  = gastos.reduce((s,g) => s+g.monto, 0);
+  const pjav   = gastos.filter(g => (g.pagado_por||g.registrado_por) === PERSONA_A).reduce((s,g)=>s+g.monto,0);
+  const prom   = gastos.filter(g => (g.pagado_por||g.registrado_por) === PERSONA_B).reduce((s,g)=>s+g.monto,0);
+
+  document.getElementById("m-total").textContent  = fmt(total);
+  document.getElementById("m-count").textContent  = `${gastos.length} gastos`;
+  document.getElementById("m-javier").textContent = fmt(pjav);
+  document.getElementById("m-romina").textContent = fmt(prom);
+  document.getElementById("m-prom").textContent   = gastos.length ? fmt(total/gastos.length) : "—";
+
+  // Balance
+  const saldos = calcularBalance(gastos);
+  const cont   = document.getElementById("deuda-container");
+  const personas = [...new Set(gastos.flatMap(g => g.entre_quienes || []))];
+
+  if (!personas.length) { cont.innerHTML = '<div class="empty">Sin datos suficientes</div>'; return; }
+
+  // Simplificar: quien tiene saldo negativo le debe a quien tiene positivo
+  const deudores  = personas.filter(p => (saldos[p]||0) < -50).sort((a,b) => saldos[a]-saldos[b]);
+  const acreedores= personas.filter(p => (saldos[p]||0) > 50);
+
+  let html = "";
+  if (!deudores.length) {
+    html = `<div class="deuda-row"><span class="deuda-persona">✅ Todo está al día, no hay deudas pendientes.</span></div>`;
+  } else {
+    deudores.forEach(d => {
+      acreedores.forEach(a => {
+        const monto = Math.min(Math.abs(saldos[d]||0), saldos[a]||0);
+        if (monto > 50) {
+          html += `<div class="deuda-row">
+            <span class="deuda-persona">${d}</span>
+            <span class="arrow">→ debe → ${fmt(monto)} → ${a}</span>
+            <span class="deuda-monto debe">${fmt(monto)}</span>
+          </div>`;
+        }
+      });
+    });
+    // Saldos individuales
+    html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">`;
+    personas.forEach(p => {
+      const s = saldos[p] || 0;
+      const cls = s >= 0 ? "ok" : "debe";
+      const lbl = s >= 0 ? "a favor" : "debe";
+      html += `<div class="deuda-row">
+        <span class="deuda-persona">${p}</span>
+        <span class="deuda-monto ${cls}">${fmt(Math.abs(s))} ${lbl}</span>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  cont.innerHTML = html;
+
+  // Charts
+  const cats = {};
+  gastos.forEach(g => { cats[g.categoria] = (cats[g.categoria]||0)+g.monto; });
+  const catLabels = Object.keys(cats);
+  const COLORS = { comida:"#639922",transporte:"#378ADD",hogar:"#EF9F27",salud:"#D4537E",ocio:"#7F77DD",otro:"#888780" };
+  if (chartCat) chartCat.destroy();
+  chartCat = new Chart(document.getElementById("chart-cat"), {
+    type:"doughnut",
+    data:{ labels:catLabels, datasets:[{ data:catLabels.map(l=>cats[l]), backgroundColor:catLabels.map(l=>COLORS[l]||"#aaa"), borderWidth:0 }] },
+    options:{ plugins:{ legend:{ position:"bottom", labels:{ font:{size:11}, padding:10 } } }, cutout:"60%" }
+  });
+
+  const mesesMap = {};
+  gastos.forEach(g => { const m=g.fecha.slice(0,7); mesesMap[m]=(mesesMap[m]||0)+g.monto; });
+  const mLabels = Object.keys(mesesMap).sort();
+  if (chartMes) chartMes.destroy();
+  chartMes = new Chart(document.getElementById("chart-mes"), {
+    type:"bar",
+    data:{ labels:mLabels.map(l=>{const[y,m]=l.split("-");return`${m}/${y.slice(2)}`;}),
+           datasets:[{data:mLabels.map(l=>mesesMap[l]),backgroundColor:"#1D9E75",borderRadius:6,borderSkipped:false}] },
+    options:{ plugins:{legend:{display:false}}, scales:{ y:{ticks:{callback:v=>"$"+Math.round(v/1000)+"k"},grid:{color:"rgba(128,128,128,0.1)"}}, x:{grid:{display:false}} } }
+  });
+}
+
+// ── Render proyección ─────────────────────────────────────────────────────────
+function renderProyeccion(gastos) {
+  const proyeccion = calcularProyeccion(gastos);
+  const meses      = Object.keys(proyeccion).sort();
+  const cont       = document.getElementById("proyeccion-container");
+
+  if (!meses.length) { cont.innerHTML = '<div class="empty">Sin gastos para proyectar</div>'; return; }
+
+  const hoy       = new Date();
+  const mesActual = hoy.toISOString().slice(0,7);
+
+  let html = '<div class="proyeccion-grid">';
+  meses.forEach(mes => {
+    const d     = proyeccion[mes];
+    const [y,m] = mes.split("-");
+    const nombre= new Date(mes+"-15").toLocaleDateString("es-CL",{month:"long",year:"numeric"});
+    const esMesActual = mes === mesActual;
+    const esFuturo    = mes > mesActual;
+
+    const badge_mes = esFuturo ? `<span style="font-size:11px;background:#E6F1FB;color:#185FA5;padding:2px 8px;border-radius:20px">proyectado</span>`
+                   : esMesActual ? `<span style="font-size:11px;background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:20px">en curso</span>`
+                   : "";
+
+    let personas_html = "";
+    Object.entries(d.personas).sort((a,b)=>b[1]-a[1]).forEach(([p,v]) => {
+      personas_html += `<div class="mes-persona-row"><span class="nombre">${p}</span><span>${fmt(v)}</span></div>`;
+    });
+
+    let cuotas_html = "";
+    if (d.cuotas_pendientes.length) {
+      cuotas_html = `<div class="mes-cuotas"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Cuotas incluidas:</div>`;
+      d.cuotas_pendientes.forEach(c => {
+        cuotas_html += `<div class="mes-cuota-item"><span style="color:var(--muted)">${c}</span></div>`;
+      });
+      cuotas_html += `</div>`;
+    }
+
+    html += `<div class="mes-card">
+      <div class="mes-header">
+        <span class="mes-titulo">${nombre} ${badge_mes}</span>
+        <span class="mes-total">${fmt(d.total)}</span>
+      </div>
+      <div class="mes-body">
+        ${personas_html}
+        ${cuotas_html}
+      </div>
+    </div>`;
+  });
+  html += "</div>";
+  cont.innerHTML = html;
+}
+
+// ── Render tabla detalle ──────────────────────────────────────────────────────
+function renderTabla(gastos) {
+  document.getElementById("count-label").textContent = `(${gastos.length})`;
+  const cont = document.getElementById("tabla-container");
+  if (!gastos.length) { cont.innerHTML='<div class="empty">Sin gastos</div>'; return; }
+
+  const rows = gastos.map(g => {
+    const personas  = Array.isArray(g.entre_quienes) ? g.entre_quienes.join(", ") : "";
+    const pagador   = g.pagado_por || g.registrado_por || "";
+    const fecha     = g.fecha ? new Date(g.fecha+"T12:00:00").toLocaleDateString("es-CL") : "—";
+    const cuota_txt = g.cuotas > 1 ? `<br><span style="font-size:11px;color:var(--muted)">${g.cuotas} cuotas</span>` : "";
+    return `<tr>
+      <td>${fecha}</td>
+      <td>${g.descripcion}${cuota_txt}</td>
+      <td>${badge(g.categoria)}</td>
+      <td style="font-weight:500">${fmt(g.monto)}</td>
+      <td style="color:var(--muted);font-size:12px">${pagador}</td>
+      <td style="color:var(--muted);font-size:12px">${personas}</td>
+      <td><button class="btn-del" onclick="eliminarGasto(${g.id},this)" title="Eliminar">🗑</button></td>
+    </tr>`;
+  }).join("");
+
+  cont.innerHTML = `<div style="overflow-x:auto"><table>
+    <thead><tr><th>Fecha</th><th>Descripción</th><th>Cat.</th><th>Monto</th><th>Pagó</th><th>Entre quiénes</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+// ── Poblar filtros ────────────────────────────────────────────────────────────
+function poblarFiltros(gastos) {
+  const meses = [...new Set(gastos.map(g=>g.fecha.slice(0,7)))].sort().reverse();
+  document.getElementById("filter-mes").innerHTML =
+    '<option value="">Todos los meses</option>' +
+    meses.map(m=>{const[y,mo]=m.split("-");return`<option value="${m}">${mo}/${y}</option>`;}).join("");
+}
+
+// ── Carga principal ───────────────────────────────────────────────────────────
+async function cargarDatos() {
+  document.getElementById("error-msg").style.display = "none";
+  try {
+    todosLosGastos = await fetchGastos();
+    poblarFiltros(todosLosGastos);
+    renderizar();
+    document.getElementById("last-update").textContent = new Date().toLocaleTimeString("es-CL");
+  } catch(e) {
+    const el = document.getElementById("error-msg");
+    el.style.display = "block";
+    el.textContent = "⚠️ Error al cargar datos: " + e.message;
+  }
+}
+
+function renderizar() {
+  const gastos = filtrar(todosLosGastos);
+  renderResumen(gastos);
+  renderProyeccion(todosLosGastos); // proyección siempre sobre todos
+  renderTabla(gastos);
+}
+
+["filter-mes","filter-cat"].forEach(id =>
+  document.getElementById(id).addEventListener("change", renderizar)
+);
+
+cargarDatos();
+setInterval(cargarDatos, 30000);
+</script>
+</body>
+</html>
