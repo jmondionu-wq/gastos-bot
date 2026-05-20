@@ -539,56 +539,63 @@ function calcularProyeccion(gastos, pagos) {
 
 // ── Render resumen ────────────────────────────────────────────────────────────
 function renderResumen(gastos, pagos) {
-  const total = gastos.reduce((s,g) => s+g.monto, 0);
-  const pjav  = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_A).reduce((s,g)=>s+g.monto,0);
-  const prom  = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_B).reduce((s,g)=>s+g.monto,0);
+  try {
+    const total = gastos.reduce((s,g) => s+g.monto, 0);
+    const pjav  = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_A).reduce((s,g)=>s+g.monto,0);
+    const prom  = gastos.filter(g => normalizar(g.pagado_por||g.registrado_por) === PERSONA_B).reduce((s,g)=>s+g.monto,0);
 
-  document.getElementById("m-total").textContent  = fmt(total);
-  document.getElementById("m-count").textContent  = `${gastos.length} gastos`;
-  document.getElementById("m-javier").textContent = fmt(pjav);
-  document.getElementById("m-romina").textContent = fmt(prom);
-  document.getElementById("m-prom").textContent   = gastos.length ? fmt(total/gastos.length) : "—";
+    document.getElementById("m-total").textContent  = fmt(total);
+    document.getElementById("m-count").textContent  = `${gastos.length} gastos`;
+    document.getElementById("m-javier").textContent = fmt(pjav);
+    document.getElementById("m-romina").textContent = fmt(prom);
+    document.getElementById("m-prom").textContent   = gastos.length ? fmt(total/gastos.length) : "—";
 
-  // Balance — usa el mes del filtro o el mes actual si no hay filtro
-  const mesActivo  = document.getElementById("filter-mes").value;
-  const mesBalance = mesActivo || new Date().toISOString().slice(0,7);
-  const saldos     = calcularBalance(gastos, pagos, mesBalance);
-  const balanceTitulo = new Date(mesBalance+"-15").toLocaleDateString("es-CL",{month:"long",year:"numeric"});
-  document.querySelector(".deuda-card h3").textContent = "⚖️ Balance — " + balanceTitulo;
-  const cont     = document.getElementById("deuda-container");
-  const personas = [...new Set(gastos.flatMap(g => (g.entre_quienes||[]).map(normalizar)))];
+    // Balance — usa el mes del filtro o el mes actual si no hay filtro
+    const mesActivo  = document.getElementById("filter-mes").value;
+    const mesBalance = mesActivo || new Date().toISOString().slice(0,7);
+    const saldos     = calcularBalance(gastos, pagos, mesBalance);
 
-  if (!personas.length) { cont.innerHTML = '<div class="empty">Sin datos</div>'; return; }
+    // Título seguro sin new Date()
+    const [balAnio, balMes] = mesBalance.split("-");
+    const nombresMes = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+    const balanceTitulo = `${nombresMes[parseInt(balMes)-1]} de ${balAnio}`;
+    document.querySelector(".deuda-card h3").textContent = "⚖️ Balance — " + balanceTitulo;
 
-  const deudores   = personas.filter(p => (saldos[p]||0) < -50).sort((a,b) => saldos[a]-saldos[b]);
-  const acreedores = personas.filter(p => (saldos[p]||0) > 50);
+    const cont = document.getElementById("deuda-container");
 
-  let html = "";
-  if (!deudores.length) {
-    html = `<div class="deuda-row"><span class="deuda-persona">✅ Todo está al día, no hay deudas pendientes.</span></div>`;
-  } else {
-    deudores.forEach(d => {
-      acreedores.forEach(a => {
-        const monto = Math.min(Math.abs(saldos[d]||0), saldos[a]||0);
-        if (monto > 50) {
-          html += `<div class="deuda-row">
-            <span class="deuda-persona">${d}</span>
-            <span class="arrow">debe ${fmt(monto)} a ${a}</span>
-            <button class="btn btn-green" style="font-size:12px;padding:5px 10px" onclick="abrirModalSaldar('${d}','${a}',${monto})">💸 Saldar</button>
-          </div>`;
-        }
-      });
-    });
-    // Calcular cuánto pagó y debería pagar cada uno en el mes
-    const cuotasMes = expandirCuotas(todosLosGastos).filter(c => !mesBalance || c.mes === mesBalance);
+    // Cuotas del mes para calcular pagó real
+    const cuotasMes = expandirCuotas(todosLosGastos).filter(c => c.mes === mesBalance);
     const totalMes  = cuotasMes.reduce((s,c) => s + c.monto_cuota, 0);
     const pagoReal  = {};
     cuotasMes.forEach(c => {
-      c.entre_quienes.forEach(p => {
-        if (p === c.pagado_por) pagoReal[p] = (pagoReal[p]||0) + c.monto_cuota;
-      });
+      if (!pagoReal[c.pagado_por]) pagoReal[c.pagado_por] = 0;
+      pagoReal[c.pagado_por] += c.monto_cuota;
     });
 
+    const deudores   = [PERSONA_A, PERSONA_B].filter(p => (saldos[p]||0) < -50);
+    const acreedores = [PERSONA_A, PERSONA_B].filter(p => (saldos[p]||0) > 50);
+
+    let html = "";
+
+    // Fila principal de deuda
+    if (!deudores.length) {
+      html += `<div class="deuda-row"><span class="deuda-persona">✅ Todo está al día</span></div>`;
+    } else {
+      deudores.forEach(d => {
+        acreedores.forEach(a => {
+          const monto = Math.min(Math.abs(saldos[d]||0), saldos[a]||0);
+          if (monto > 50) {
+            html += `<div class="deuda-row">
+              <span class="deuda-persona">${d}</span>
+              <span class="arrow">debe ${fmt(monto)} a ${a}</span>
+              <button class="btn btn-green" style="font-size:12px;padding:5px 10px" onclick="abrirModalSaldar('${d}','${a}',${monto})">💸 Saldar</button>
+            </div>`;
+          }
+        });
+      });
+    }
+
+    // Tabla detallada pagó / debería / diferencia
     html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 12px;font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">
         <span></span><span>Pagó</span><span>Debería</span><span>Diferencia</span>
@@ -608,8 +615,13 @@ function renderResumen(gastos, pagos) {
       </div>`;
     });
     html += `</div>`;
+
+    cont.innerHTML = html;
+
+  } catch(e) {
+    console.error("Error en renderResumen:", e);
+    document.getElementById("deuda-container").innerHTML = '<div class="empty">Error al calcular balance</div>';
   }
-  cont.innerHTML = html;
 
   // Historial de pagos
   const pagosCard = document.getElementById("pagos-card");
@@ -707,7 +719,6 @@ function renderProyeccion(gastos, pagos) {
     }
     // Deuda del mes
     let deuda_html = "";
-    const sn = d.saldo_neto || {};
     const deudoresMes = Object.entries(sn).filter(([,v]) => v < -50);
     if (deudoresMes.length && !d.saldado) {
       deuda_html = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:#A32D2D">`;
