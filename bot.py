@@ -5,6 +5,7 @@ from datetime import datetime
 
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import Conflict
 from telegram.ext import (
     Application, MessageHandler, CommandHandler,
     CallbackQueryHandler, filters, ContextTypes
@@ -310,7 +311,19 @@ async def manejar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if isinstance(context.error, Conflict):
+        logger.warning("Conflicto de instancias — esperando 5s para que la anterior termine...")
+        import asyncio
+        await asyncio.sleep(5)
+    else:
+        logger.error(f"Error: {context.error}", exc_info=context.error)
+
+
 def main():
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start",    cmd_start))
     app.add_handler(CommandHandler("resumen",  cmd_resumen))
@@ -318,10 +331,8 @@ def main():
     app.add_handler(CallbackQueryHandler(manejar_callback))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, manejar_audio))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, manejar_texto))
+    app.add_error_handler(error_handler)
     logger.info("Bot iniciado...")
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 
