@@ -597,24 +597,31 @@ function renderResumen(gastos, pagos) {
 
     // Tabla detallada pagó / debería / diferencia
     html += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 12px;font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">
-        <span></span><span>Pagó</span><span>Debería</span><span>Diferencia</span>
-      </div>`;
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">
+            <th style="text-align:left;padding:4px 8px;font-weight:500;border-right:1px solid var(--border)">Persona</th>
+            <th style="text-align:center;padding:4px 8px;font-weight:500;border-right:1px solid var(--border)">Pagó</th>
+            <th style="text-align:center;padding:4px 8px;font-weight:500;border-right:1px solid var(--border)">Debería</th>
+            <th style="text-align:center;padding:4px 8px;font-weight:500">Diferencia</th>
+          </tr>
+        </thead>
+        <tbody>`;
     [PERSONA_A, PERSONA_B].forEach(p => {
       const pago    = pagoReal[p] || 0;
       const deberia = totalMes / 2;
       const diff    = saldos[p] || 0;
-      const diffFmt = diff === 0 ? '<span style="color:var(--muted)">—</span>'
-        : diff > 0 ? `<span style="color:#3B6D11;font-weight:500">+${fmt(diff)} a favor</span>`
-        : `<span style="color:#A32D2D;font-weight:500">${fmt(Math.abs(diff))} debe</span>`;
-      html += `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 12px;padding:8px 0;border-bottom:0.5px solid var(--border);font-size:13px">
-        <span style="font-weight:500">${p}</span>
-        <span>${fmt(pago)}</span>
-        <span style="color:var(--muted)">${fmt(deberia)}</span>
-        <span>${diffFmt}</span>
-      </div>`;
+      const diffFmt = diff === 0 ? `<span style="color:var(--muted)">—</span>`
+        : diff > 0 ? `<span style="color:#3B6D11;font-weight:600">+${fmt(diff)}</span>`
+        : `<span style="color:#A32D2D;font-weight:600">${fmt(Math.abs(diff))}</span>`;
+      html += `<tr style="border-top:1px solid var(--border)">
+        <td style="padding:10px 8px;font-weight:500;border-right:1px solid var(--border)">${p}</td>
+        <td style="padding:10px 8px;text-align:center;border-right:1px solid var(--border)">${fmt(pago)}</td>
+        <td style="padding:10px 8px;text-align:center;color:var(--muted);border-right:1px solid var(--border)">${fmt(deberia)}</td>
+        <td style="padding:10px 8px;text-align:center">${diffFmt}</td>
+      </tr>`;
     });
-    html += `</div>`;
+    html += `</tbody></table></div>`;
 
     cont.innerHTML = html;
 
@@ -694,23 +701,27 @@ function renderProyeccion(gastos, pagos) {
     // pagó = lo que debería + saldo a favor (o - saldo en deuda)
     const sn = d.saldo_neto || {};
 
-    let personas_html = `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 12px;font-size:12px;margin-bottom:4px;color:var(--muted)">
-      <span></span><span>Pagó</span><span>Debería</span><span>Diff</span>
-    </div>`;
+    let personas_html = `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px">
+      <thead><tr style="color:var(--muted);font-size:11px">
+        <th style="text-align:left;padding:3px 6px;font-weight:500;border-right:1px solid var(--border)">Persona</th>
+        <th style="text-align:center;padding:3px 6px;font-weight:500;border-right:1px solid var(--border)">Pagó</th>
+        <th style="text-align:center;padding:3px 6px;font-weight:500;border-right:1px solid var(--border)">Debería</th>
+        <th style="text-align:center;padding:3px 6px;font-weight:500">Diff</th>
+      </tr></thead><tbody>`;
     [PERSONA_A, PERSONA_B].forEach(p => {
-      // pagó = deberiaC_u + saldo_neto (si saldo>0 pagó de más, si <0 pagó de menos)
       const pago_real = deberiaC_u + (sn[p]||0);
       const diff      = (sn[p]||0);
-      const diffFmt   = diff === 0 ? "—"
-        : diff > 0 ? `<span style="color:#3B6D11">+${fmt(diff)}</span>`
-        : `<span style="color:#A32D2D">${fmt(diff)}</span>`;
-      personas_html += `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:4px 12px;font-size:13px;padding:4px 0;border-bottom:0.5px solid var(--border)">
-        <span style="font-weight:500">${p}</span>
-        <span>${fmt(Math.max(0, pago_real))}</span>
-        <span style="color:var(--muted)">${fmt(deberiaC_u)}</span>
-        <span>${diffFmt}</span>
-      </div>`;
+      const diffFmt   = diff === 0 ? `<span style="color:var(--muted)">—</span>`
+        : diff > 0 ? `<span style="color:#3B6D11;font-weight:600">+${fmt(diff)}</span>`
+        : `<span style="color:#A32D2D;font-weight:600">${fmt(diff)}</span>`;
+      personas_html += `<tr style="border-top:1px solid var(--border)">
+        <td style="padding:7px 6px;font-weight:500;border-right:1px solid var(--border)">${p}</td>
+        <td style="padding:7px 6px;text-align:center;border-right:1px solid var(--border)">${fmt(Math.max(0, pago_real))}</td>
+        <td style="padding:7px 6px;text-align:center;color:var(--muted);border-right:1px solid var(--border)">${fmt(deberiaC_u)}</td>
+        <td style="padding:7px 6px;text-align:center">${diffFmt}</td>
+      </tr>`;
     });
+    personas_html += `</tbody></table>`;
     let cuotas_html = "";
     if (d.cuotas_pendientes.length) {
       cuotas_html = `<div class="mes-cuotas"><div style="margin-bottom:4px">Cuotas incluidas:</div>`;
