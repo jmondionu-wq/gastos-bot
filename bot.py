@@ -49,12 +49,14 @@ async def transcribir_audio(audio_bytes: bytes, filename: str) -> str:
 
 async def extraer_gasto(texto: str, nombre_usuario: str) -> dict:
     hoy = datetime.now().strftime("%d/%m/%Y")
+    mes_actual = datetime.now().strftime("%m/%Y")
     prompt = f"""Analiza este texto sobre un gasto y extrae la información.
 Responde SOLO con JSON válido, sin texto extra, sin bloques de código.
 
 Texto: "{texto}"
 Quien lo registra: {nombre_usuario}
 Fecha de hoy: {hoy}
+Mes actual: {mes_actual}
 
 El JSON debe tener exactamente estas claves:
 - descripcion: string (nombre del gasto, máx 60 chars)
@@ -62,6 +64,13 @@ El JSON debe tener exactamente estas claves:
 - categoria: una de [comida, transporte, hogar, salud, ocio, otro]
 - fecha: string DD/MM/YYYY (usa hoy si no se menciona)
 - cuotas: integer (1 si es al contado)
+- fecha_primera_cuota: string MM/YYYY — mes en que cae la primera cuota. Reglas:
+    * Si dice "empieza en marzo", "primer cobro en abril", "desde febrero", "la primera cae en mayo" → usar ese mes del año actual (o el mencionado)
+    * Si dice "el mes que viene", "próximo mes", "mes siguiente" → sumar 1 mes al mes actual
+    * Si dice "en dos meses" → sumar 2 meses al mes actual
+    * Si dice "desde ya", "este mes", "cuota uno este mes" → usar el mes actual
+    * Si no se menciona nada sobre cuándo empieza → usar el mes actual por defecto
+    * Solo es relevante si cuotas > 1; si es al contado usar el mes actual igual
 - entre_quienes: array de strings (nombres; si dice "yo" usa "{nombre_usuario}"; si no menciona nadie usa ["{nombre_usuario}"])
 - pagado_por: string (quien pagó; si dice "yo pagué" o no se menciona usa "{nombre_usuario}")
 - mi_parte: number (monto que le corresponde a quien registra)
@@ -93,18 +102,30 @@ def guardar_gasto(gasto: dict, username: str) -> dict:
     except Exception:
         fecha_iso = datetime.now().strftime("%Y-%m-%d")
 
+    # Convierte fecha_primera_cuota MM/YYYY → YYYY-MM-01
+    try:
+        fpc_raw = gasto.get("fecha_primera_cuota", "")
+        if fpc_raw:
+            fpc_obj = datetime.strptime(fpc_raw, "%m/%Y")
+        else:
+            fpc_obj = datetime.now().replace(day=1)
+        fecha_primera_cuota_iso = fpc_obj.strftime("%Y-%m-01")
+    except Exception:
+        fecha_primera_cuota_iso = datetime.now().strftime("%Y-%m-01")
+
     fila = {
-        "descripcion":    gasto.get("descripcion", "Sin descripción"),
-        "monto":          float(gasto.get("monto", 0)),
-        "categoria":      gasto.get("categoria", "otro"),
-        "fecha":          fecha_iso,
-        "cuotas":         int(gasto.get("cuotas", 1)),
-        "entre_quienes":  gasto.get("entre_quienes", [username]),
-        "pagado_por":     gasto.get("pagado_por", username),
-        "mi_parte":       float(gasto.get("mi_parte", gasto.get("monto", 0))),
-        "notas":          gasto.get("notas", ""),
-        "registrado_por": username,
-        "texto_original": gasto.get("_texto_original", ""),
+        "descripcion":         gasto.get("descripcion", "Sin descripción"),
+        "monto":               float(gasto.get("monto", 0)),
+        "categoria":           gasto.get("categoria", "otro"),
+        "fecha":               fecha_iso,
+        "cuotas":              int(gasto.get("cuotas", 1)),
+        "fecha_primera_cuota": fecha_primera_cuota_iso,
+        "entre_quienes":       gasto.get("entre_quienes", [username]),
+        "pagado_por":          gasto.get("pagado_por", username),
+        "mi_parte":            float(gasto.get("mi_parte", gasto.get("monto", 0))),
+        "notas":               gasto.get("notas", ""),
+        "registrado_por":      username,
+        "texto_original":      gasto.get("_texto_original", ""),
     }
     result = supabase.table("gastos").insert(fila).execute()
     return result.data[0]
@@ -116,12 +137,19 @@ def formatear_preview(gasto: dict, username: str) -> str:
     mi_parte   = f"${float(gasto.get('mi_parte', 0)):,.0f}".replace(",", ".")
     personas   = ", ".join(gasto.get("entre_quienes", [username]))
     pagado_por = gasto.get("pagado_por", username)
-    cuota_txt  = f"en {gasto['cuotas']} cuotas" if int(gasto.get("cuotas", 1)) > 1 else "al contado"
+    n_cuotas  = int(gasto.get("cuotas", 1))
+    cuota_txt = f"en {n_cuotas} cuotas" if n_cuotas > 1 else "al contado"
+    fpc       = gasto.get("fecha_primera_cuota", "")
+    cuota_por_persona = float(gasto.get("monto", 0)) / n_cuotas / max(len(gasto.get("entre_quienes", [username])), 1)
 
     lineas = [
         "🔍 *¿Confirmas este gasto?*\n",
         f"📝 {gasto.get('descripcion', '')}",
         f"💰 {monto_fmt} ({cuota_txt})",
+    ]
+    if n_cuotas > 1:
+        lineas.append(f"📆 Primera cuota: {fpc} — ${cuota_por_persona:,.0f}/mes c/u".replace(",", "."))
+    lineas += [
         f"🏷️ {gasto.get('categoria', '').capitalize()}",
         f"📅 {gasto.get('fecha', '')}",
         f"💳 Pagó: {pagado_por}",
