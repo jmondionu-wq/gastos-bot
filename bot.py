@@ -222,20 +222,18 @@ async def manejar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
-async def main():
+def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("resumen", cmd_resumen))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, manejar_audio))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, manejar_texto))
     logger.info("Bot iniciado...")
-    async with app:
-        await app.start()
-        await app.updater.start_polling()
-        await app.updater.idle()
-        await app.stop()
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    app.run_polling()
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
